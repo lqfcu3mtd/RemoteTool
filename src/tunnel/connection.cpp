@@ -90,7 +90,11 @@ void TunnelConnection::send_frame(const rmt::protocol::Frame& frame,
     }
 
     auto encoded = rmt::protocol::encode_frame(frame);
-    write_queue_.push_back({std::move(encoded), std::move(on_sent)});
+
+    // Control frames (everything except SESSION_DATA) go to the priority queue.
+    bool is_data = (frame.header.type == rmt::protocol::MsgSessionData);
+    auto& q = is_data ? data_queue_ : control_queue_;
+    q.push_back({std::move(encoded), std::move(on_sent)});
 
     if (!writing_) {
         do_write();
@@ -160,23 +164,25 @@ void TunnelConnection::do_read() {
 }
 
 void TunnelConnection::do_write() {
-    if (write_queue_.empty()) {
+    // Priority: control frames always before data frames (PROTOCOL_SPEC section 11).
+    auto& q = !control_queue_.empty() ? control_queue_ : data_queue_;
+    if (q.empty()) {
         writing_ = false;
         return;
     }
 
     writing_ = true;
-    auto& entry = write_queue_.front();
+    auto& entry = q.front();
 
     asio::async_write(socket_, asio::buffer(entry.data),
-        [this](const asio::error_code& ec, std::size_t /*bytes_transferred*/) {
-            if (write_queue_.empty()) {
+        [this, &q](const asio::error_code& ec, std::size_t /*bytes_transferred*/) {
+            if (q.empty()) {
                 writing_ = false;
                 return;
             }
 
-            auto entry = std::move(write_queue_.front());
-            write_queue_.pop_front();
+            auto entry = std::move(q.front());
+            q.pop_front();
 
             if (ec) {
                 if (ec != asio::error::operation_aborted) {
@@ -198,14 +204,16 @@ void TunnelConnection::do_write() {
 }
 
 void TunnelConnection::handle_error(rmt::ErrorCode err) {
-    // Drain write queue, notifying each pending entry with the error.
-    while (!write_queue_.empty()) {
-        auto entry = std::move(write_queue_.front());
-        write_queue_.pop_front();
-        if (entry.callback) {
-            entry.callback(err);
+    // Drain both write queues, notifying each pending entry with the error.
+    auto drain = [&](std::deque<WriteEntry>& q) {
+        while (!q.empty()) {
+            auto entry = std::move(q.front());
+            q.pop_front();
+            if (entry.callback) entry.callback(err);
         }
-    }
+    };
+    drain(control_queue_);
+    drain(data_queue_);
     writing_ = false;
 
     // Transition to Closed and fire on_closed exactly once.

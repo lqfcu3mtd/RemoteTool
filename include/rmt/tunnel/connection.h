@@ -92,7 +92,8 @@ private:
         std::vector<std::uint8_t> data;
         std::function<void(rmt::ErrorCode)> callback;
     };
-    std::deque<WriteEntry> write_queue_;
+    std::deque<WriteEntry> control_queue_;
+    std::deque<WriteEntry> data_queue_;
     bool writing_ = false;
 
     std::vector<std::uint8_t> read_buf_;
