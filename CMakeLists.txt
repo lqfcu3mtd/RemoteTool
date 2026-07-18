@@ -36,6 +36,9 @@ include(${CMAKE_SOURCE_DIR}/cmake/Dependencies.cmake)
 # --- rmt_core 静态库 ---
 add_library(rmt_core STATIC
     src/protocol/frame.cpp
+    src/common/log.cpp
+    src/config/strict_json.cpp
+    src/config/atomic_write.cpp
 )
 
 target_include_directories(rmt_core
@@ -50,3 +53,23 @@ enable_testing()
 add_executable(frame_test tests/unit/frame_test.cpp)
 target_link_libraries(frame_test PRIVATE rmt_core)
 add_test(NAME frame_test COMMAND frame_test)
+
+# scope_guard_test (header-only module, links rmt_core for include dir)
+add_executable(scope_guard_test tests/unit/scope_guard_test.cpp)
+target_link_libraries(scope_guard_test PRIVATE rmt_core)
+add_test(NAME scope_guard_test COMMAND scope_guard_test)
+
+# log_test
+add_executable(log_test tests/unit/log_test.cpp)
+target_link_libraries(log_test PRIVATE rmt_core)
+add_test(NAME log_test COMMAND log_test)
+
+# strict_json_test
+add_executable(strict_json_test tests/unit/strict_json_test.cpp)
+target_link_libraries(strict_json_test PRIVATE rmt_core)
+add_test(NAME strict_json_test COMMAND strict_json_test)
+
+# atomic_write_test
+add_executable(atomic_write_test tests/unit/atomic_write_test.cpp)
+target_link_libraries(atomic_write_test PRIVATE rmt_core)
+add_test(NAME atomic_write_test COMMAND atomic_write_test)
