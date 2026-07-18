@@ -53,6 +53,10 @@ public:
     std::size_t device_count() const noexcept;
     bool is_online(const std::string& device_id) const noexcept;
 
+    // Returns the TunnelConnection for an online device, or nullptr.
+    std::shared_ptr<TunnelConnection> get_connection(
+        const std::string& device_id) const;
+
     // ===== User callbacks =====
     void set_on_device_online(std::function<void(const DeviceEntry&)> cb);
     void set_on_device_offline(std::function<void(const DeviceEntry&)> cb);
@@ -72,6 +76,13 @@ public:
     // Allow tests to age out a device for timeout verification.
     void set_last_frame_time_for_test(const std::string& device_id,
                                       std::chrono::steady_clock::time_point t);
+
+    // Session-frame dispatch: called when DeviceManager does not handle a frame.
+    // The callback receives the connection and the frame. Used by SessionManager
+    // to receive SESSION_OPENED / SESSION_OPEN_FAILED / SESSION_DATA / etc.
+    void set_on_unhandled_frame(
+        std::function<void(std::shared_ptr<TunnelConnection>,
+                           const rmt::protocol::Frame&)> cb);
 
 private:
     void on_frame_received(std::shared_ptr<TunnelConnection> conn,
@@ -99,6 +110,9 @@ private:
     std::function<void(const DeviceEntry&)> on_device_offline_;
 
     asio::steady_timer cleanup_timer_;
+
+    std::function<void(std::shared_ptr<TunnelConnection>,
+                       const rmt::protocol::Frame&)> on_unhandled_frame_;
 
     rmt::common::Logger logger_;
 };

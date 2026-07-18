@@ -516,4 +516,293 @@ HeartbeatAckDecodeResult decode_heartbeat_ack(const Frame& frame) {
     return msg;
 }
 
+// ====== OPEN_SESSION ======
+
+Frame encode_open_session(const OpenSessionMessage& msg) {
+    std::string json;
+    json += "{\"mapping_id\":\"";
+    json += json_escape(msg.mapping_id);
+    json += "\",\"target_host\":\"";
+    json += json_escape(msg.target_host);
+    json += "\",\"target_port\":";
+    json += std::to_string(msg.target_port);
+    json += ",\"connect_timeout_ms\":";
+    json += std::to_string(msg.connect_timeout_ms);
+    json += "}";
+
+    Frame frame;
+    frame.header.type = MsgOpenSession;
+    frame.header.session_id = 0;  // session_id assigned by caller after encode
+    frame.payload = string_to_payload(json);
+    return frame;
+}
+
+OpenSessionDecodeResult decode_open_session(const Frame& frame) {
+    rmt::config::JsonValue json_obj;
+    const rmt::config::JsonValue* obj = nullptr;
+
+    std::string pre_err = decode_preamble<OpenSessionDecodeResult>(frame, MsgOpenSession, json_obj, obj);
+    if (!pre_err.empty()) return pre_err;
+
+    static const std::unordered_set<std::string> kAllowed = {
+        "mapping_id", "target_host", "target_port", "connect_timeout_ms"
+    };
+    std::string unknown_err = check_unknown_fields(*obj, kAllowed);
+    if (!unknown_err.empty()) return unknown_err;
+
+    std::string err;
+
+    // mapping_id
+    std::string mapping_id;
+    err = extract_string(*obj, "mapping_id", mapping_id);
+    if (!err.empty()) return err;
+    if (mapping_id.empty() || mapping_id.size() > 64) {
+        return "mapping_id invalid: must be 1-64 chars";
+    }
+
+    // target_host
+    std::string target_host;
+    err = extract_string(*obj, "target_host", target_host);
+    if (!err.empty()) return err;
+    if (target_host.empty()) {
+        return "target_host must not be empty";
+    }
+
+    // target_port
+    long long target_port_val = 0;
+    err = extract_int(*obj, "target_port", target_port_val);
+    if (!err.empty()) return err;
+    if (target_port_val < 1 || target_port_val > 65535) {
+        return "target_port out of range [1, 65535], got "
+             + std::to_string(target_port_val);
+    }
+
+    // connect_timeout_ms
+    long long timeout_val = 0;
+    err = extract_int(*obj, "connect_timeout_ms", timeout_val);
+    if (!err.empty()) return err;
+    if (timeout_val < 1000 || timeout_val > 30000) {
+        return "connect_timeout_ms out of range [1000, 30000], got "
+             + std::to_string(timeout_val);
+    }
+
+    OpenSessionMessage msg;
+    msg.mapping_id = std::move(mapping_id);
+    msg.target_host = std::move(target_host);
+    msg.target_port = static_cast<int>(target_port_val);
+    msg.connect_timeout_ms = static_cast<int>(timeout_val);
+    return msg;
+}
+
+// ====== SESSION_OPENED ======
+
+Frame encode_session_opened(const SessionOpenedMessage& msg) {
+    std::string json;
+    json += "{\"mapping_id\":\"";
+    json += json_escape(msg.mapping_id);
+    json += "\",\"connected_host\":\"";
+    json += json_escape(msg.connected_host);
+    json += "\",\"connected_port\":";
+    json += std::to_string(msg.connected_port);
+    json += "}";
+
+    Frame frame;
+    frame.header.type = MsgSessionOpened;
+    frame.header.session_id = 0;
+    frame.payload = string_to_payload(json);
+    return frame;
+}
+
+SessionOpenedDecodeResult decode_session_opened(const Frame& frame) {
+    rmt::config::JsonValue json_obj;
+    const rmt::config::JsonValue* obj = nullptr;
+
+    std::string pre_err = decode_preamble<SessionOpenedDecodeResult>(frame, MsgSessionOpened, json_obj, obj);
+    if (!pre_err.empty()) return pre_err;
+
+    static const std::unordered_set<std::string> kAllowed = {
+        "mapping_id", "connected_host", "connected_port"
+    };
+    std::string unknown_err = check_unknown_fields(*obj, kAllowed);
+    if (!unknown_err.empty()) return unknown_err;
+
+    std::string err;
+
+    // mapping_id
+    std::string mapping_id;
+    err = extract_string(*obj, "mapping_id", mapping_id);
+    if (!err.empty()) return err;
+
+    // connected_host
+    std::string connected_host;
+    err = extract_string(*obj, "connected_host", connected_host);
+    if (!err.empty()) return err;
+
+    // connected_port
+    long long port_val = 0;
+    err = extract_int(*obj, "connected_port", port_val);
+    if (!err.empty()) return err;
+
+    SessionOpenedMessage msg;
+    msg.mapping_id = std::move(mapping_id);
+    msg.connected_host = std::move(connected_host);
+    msg.connected_port = static_cast<int>(port_val);
+    return msg;
+}
+
+// ====== SESSION_OPEN_FAILED ======
+
+Frame encode_session_open_failed(const SessionOpenFailedMessage& msg) {
+    std::string json;
+    json += "{\"error_code\":\"";
+    json += json_escape(msg.error_code);
+    json += "\",\"message\":\"";
+    json += json_escape(msg.message);
+    json += "\"}";
+
+    Frame frame;
+    frame.header.type = MsgSessionOpenFailed;
+    frame.header.session_id = 0;
+    frame.payload = string_to_payload(json);
+    return frame;
+}
+
+SessionOpenFailedDecodeResult decode_session_open_failed(const Frame& frame) {
+    rmt::config::JsonValue json_obj;
+    const rmt::config::JsonValue* obj = nullptr;
+
+    std::string pre_err = decode_preamble<SessionOpenFailedDecodeResult>(frame, MsgSessionOpenFailed, json_obj, obj);
+    if (!pre_err.empty()) return pre_err;
+
+    static const std::unordered_set<std::string> kAllowed = {
+        "error_code", "message"
+    };
+    std::string unknown_err = check_unknown_fields(*obj, kAllowed);
+    if (!unknown_err.empty()) return unknown_err;
+
+    std::string err;
+
+    // error_code
+    std::string error_code;
+    err = extract_string(*obj, "error_code", error_code);
+    if (!err.empty()) return err;
+
+    // message
+    std::string message;
+    err = extract_string(*obj, "message", message);
+    if (!err.empty()) return err;
+
+    SessionOpenFailedMessage msg;
+    msg.error_code = std::move(error_code);
+    msg.message = std::move(message);
+    return msg;
+}
+
+// ====== SESSION_DATA ======
+
+Frame encode_session_data(SessionId session_id,
+                          const std::uint8_t* data, std::size_t len) {
+    Frame frame;
+    frame.header.type = MsgSessionData;
+    frame.header.session_id = session_id;
+    frame.payload.assign(data, data + len);
+    return frame;
+}
+
+SessionDataResult decode_session_data(const Frame& frame) {
+    // Return payload directly. Zero-length DATA is caught by frame layer.
+    return frame.payload;
+}
+
+// ====== SESSION_HALF_CLOSE ======
+
+Frame encode_session_half_close(const SessionHalfCloseMessage& msg) {
+    std::string json;
+    json += "{\"direction\":\"";
+    json += json_escape(msg.direction);
+    json += "\"}";
+
+    Frame frame;
+    frame.header.type = MsgSessionHalfClose;
+    frame.header.session_id = 0;
+    frame.payload = string_to_payload(json);
+    return frame;
+}
+
+SessionHalfCloseDecodeResult decode_session_half_close(const Frame& frame) {
+    rmt::config::JsonValue json_obj;
+    const rmt::config::JsonValue* obj = nullptr;
+
+    std::string pre_err = decode_preamble<SessionHalfCloseDecodeResult>(frame, MsgSessionHalfClose, json_obj, obj);
+    if (!pre_err.empty()) return pre_err;
+
+    static const std::unordered_set<std::string> kAllowed = {
+        "direction"
+    };
+    std::string unknown_err = check_unknown_fields(*obj, kAllowed);
+    if (!unknown_err.empty()) return unknown_err;
+
+    std::string err;
+
+    // direction
+    std::string direction;
+    err = extract_string(*obj, "direction", direction);
+    if (!err.empty()) return err;
+    if (direction != "write") {
+        return "direction must be \"write\", got \"" + direction + "\"";
+    }
+
+    SessionHalfCloseMessage msg;
+    msg.direction = std::move(direction);
+    return msg;
+}
+
+// ====== CLOSE_SESSION ======
+
+Frame encode_close_session(const CloseSessionMessage& msg) {
+    std::string json;
+    json += "{\"reason\":\"";
+    json += json_escape(msg.reason);
+    json += "\",\"message\":\"";
+    json += json_escape(msg.message);
+    json += "\"}";
+
+    Frame frame;
+    frame.header.type = MsgCloseSession;
+    frame.header.session_id = 0;
+    frame.payload = string_to_payload(json);
+    return frame;
+}
+
+CloseSessionDecodeResult decode_close_session(const Frame& frame) {
+    rmt::config::JsonValue json_obj;
+    const rmt::config::JsonValue* obj = nullptr;
+
+    std::string pre_err = decode_preamble<CloseSessionDecodeResult>(frame, MsgCloseSession, json_obj, obj);
+    if (!pre_err.empty()) return pre_err;
+
+    static const std::unordered_set<std::string> kAllowed = {
+        "reason", "message"
+    };
+    std::string unknown_err = check_unknown_fields(*obj, kAllowed);
+    if (!unknown_err.empty()) return unknown_err;
+
+    std::string err;
+
+    // reason
+    std::string reason;
+    err = extract_string(*obj, "reason", reason);
+    if (!err.empty()) return err;
+
+    // message
+    std::string message;
+    err = extract_string(*obj, "message", message);
+    if (!err.empty()) return err;
+
+    CloseSessionMessage msg;
+    msg.reason = std::move(reason);
+    msg.message = std::move(message);
+    return msg;
+}
+
 }  // namespace rmt::protocol

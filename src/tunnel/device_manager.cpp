@@ -84,6 +84,17 @@ bool DeviceManager::is_online(const std::string& device_id) const noexcept {
     return false;
 }
 
+std::shared_ptr<TunnelConnection> DeviceManager::get_connection(
+    const std::string& device_id) const {
+    for (const auto& kv : connections_) {
+        if (kv.second.device.online
+            && kv.second.device.device_id == device_id) {
+            return kv.second.conn;
+        }
+    }
+    return nullptr;
+}
+
 // ===== User callbacks =====
 
 void DeviceManager::set_on_device_online(
@@ -150,9 +161,13 @@ void DeviceManager::on_frame_received(std::shared_ptr<TunnelConnection> conn,
             conn->close();
         }
     } else {
-        logger_.warn("DeviceManager: unexpected frame type 0x"
-                     + std::to_string(static_cast<unsigned>(type))
-                     + " from " + conn->remote_address());
+        if (on_unhandled_frame_) {
+            on_unhandled_frame_(conn, frame);
+        } else {
+            logger_.warn("DeviceManager: unexpected frame type 0x"
+                         + std::to_string(static_cast<unsigned>(type))
+                         + " from " + conn->remote_address());
+        }
     }
 }
 
@@ -326,6 +341,12 @@ void DeviceManager::send_heartbeat_ack(std::shared_ptr<TunnelConnection> conn,
     conn->send_frame(frame, [](rmt::ErrorCode /*ec*/) {
         // Errors logged by TunnelConnection.
     });
+}
+
+void DeviceManager::set_on_unhandled_frame(
+    std::function<void(std::shared_ptr<TunnelConnection>,
+                       const rmt::protocol::Frame&)> cb) {
+    on_unhandled_frame_ = std::move(cb);
 }
 
 void DeviceManager::remove_device(const std::string& device_id) {

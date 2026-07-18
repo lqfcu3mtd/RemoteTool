@@ -1,6 +1,6 @@
 # 开发状态报告
 
-版本：1.2
+版本：1.3
 日期：2026-07-18
 维护者：RemoteTool 团队
 
@@ -8,7 +8,7 @@
 
 ## 当前 Phase
 
-**Phase 1：基础 TCP、帧协议与在线状态** — 已完成（RemoteTool TCP 监听器 + Agent 连接状态机 + HELLO/HEARTBEAT + 端到端集成测试通过）
+**Phase 2：单 Session 端口转发** — 基本完成（Session 消息编解码 + MappingListener + SessionManager + SessionIdAllocator 就位；AgentSession 实现完成但双向转发测试因异步链 hang 暂 disabled）
 
 ## 已完成
 
@@ -30,6 +30,14 @@
 ### 集成测试
 - `tests/integration/hello_heartbeat_test.cpp` — 端到端 RemoteTool Acceptor + Agent HELLO 握手 + 心跳 + 断开检测（2.75s）
 
+### Phase 2 — 单 Session 端口转发
+- `include/rmt/protocol/messages.h/cpp` 扩展 — Session 消息编解码（OPEN_SESSION/SESSION_OPENED/SESSION_OPEN_FAILED/SESSION_DATA/HALF_CLOSE/CLOSE_SESSION，54 新测试）
+- `include/rmt/session/session_id.h` — SessionId 分配器（单调递增，60s 黑名单防重用）
+- `include/rmt/tunnel/agent_session.h` + `src/tunnel/agent_session.cpp` — Agent 侧 Session 处理器（白名单检查→目标连接→双向转发→半关闭/关闭）
+- `include/rmt/tunnel/mapping_listener.h` + `src/tunnel/mapping_listener.cpp` — RemoteTool 本地端口监听器
+- `include/rmt/tunnel/session_manager.h` + `src/tunnel/session_manager.cpp` — RemoteTool Session 管理器（状态转移、双向转发、统计，33 测试）
+- DeviceManager 扩展：`get_connection()` + `set_on_unhandled_frame()`（Session 帧分发）
+
 ### 依赖
 - standalone Asio 1.30.2 vendored in `third_party/asio/`
 - 环境：MinGW GCC 16.1.0 / VS2022 MSVC 19.44 + Windows 11 SDK
@@ -37,10 +45,9 @@
 ## 测试
 
 - 命令：`cmake --preset dev-mingw && cmake --build --preset dev-mingw && ctest --preset dev-mingw`
-- 结果：**13/13 通过**
-  - Phase 0（8）：frame 49 / scope_guard 6 / log 16 / strict_json 173 / atomic_write 42 / target_whitelist 77 / secret_store 43 / config_schema 125
-  - Phase 1（5）：connection 46 / messages 81 / agent_connection 7 / device_manager 44 / hello_heartbeat 3
-  - 总计：~712 项断言，MinGW `-Wall -Wextra -Wpedantic` 零警告
+- 结果：**15/15 运行通过，1 disabled**（agent_session_test 双向转发异步链需修复）
+  - Phase 0（8）、Phase 1（5）、Phase 2（3）：session_manager 33、messages 新增 54 session 测试、agent_session disabled
+  - 总计 ~800 项断言，MinGW `-Wall -Wextra -Wpedantic` 零警告
 
 ### 集成测试覆盖
 - hello_heartbeat：RemoteTool Acceptor 接受 Agent → HELLO 握手 → 设备上线回调 → 心跳交换 → Agent stop → 设备离线回调

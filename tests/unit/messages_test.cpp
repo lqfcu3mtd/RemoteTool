@@ -520,6 +520,343 @@ void run_cross_roundtrip() {
     }
 }
 
+void run_session_tests() {
+    // --- OPEN_SESSION ---
+
+    // Test: encode_open_session + decode_open_session round-trip
+    {
+        OpenSessionMessage m;
+        m.mapping_id = "map-site001-ssh";
+        m.target_host = "192.168.1.1";
+        m.target_port = 22;
+        m.connect_timeout_ms = 10000;
+
+        auto frame = encode_open_session(m);
+        RMT_CHECK(frame.header.type == MsgOpenSession);
+
+        auto result = decode_open_session(frame);
+        auto* msg = std::get_if<OpenSessionMessage>(&result);
+        RMT_CHECK_MSG(msg != nullptr, "decode_open_session succeeded");
+        if (msg) {
+            RMT_CHECK(msg->mapping_id == "map-site001-ssh");
+            RMT_CHECK(msg->target_host == "192.168.1.1");
+            RMT_CHECK(msg->target_port == 22);
+            RMT_CHECK(msg->connect_timeout_ms == 10000);
+        }
+    }
+
+    // Test: target_port range (0 -> error)
+    {
+        std::string payload = "{\"mapping_id\":\"map1\",\"target_host\":\"1.2.3.4\","
+                              "\"target_port\":0,\"connect_timeout_ms\":10000}";
+        auto frame = make_frame(MsgOpenSession, 0, payload);
+        auto result = decode_open_session(frame);
+        auto* err = std::get_if<std::string>(&result);
+        RMT_CHECK_MSG(err != nullptr, "target_port=0 rejected");
+        if (err) {
+            RMT_CHECK_MSG(error_contains(*err, "target_port"),
+                          "error mentions target_port: " + *err);
+        }
+    }
+
+    // Test: target_port range (65536 -> error)
+    {
+        std::string payload = "{\"mapping_id\":\"map1\",\"target_host\":\"1.2.3.4\","
+                              "\"target_port\":65536,\"connect_timeout_ms\":10000}";
+        auto frame = make_frame(MsgOpenSession, 0, payload);
+        auto result = decode_open_session(frame);
+        auto* err = std::get_if<std::string>(&result);
+        RMT_CHECK_MSG(err != nullptr, "target_port=65536 rejected");
+    }
+
+    // Test: connect_timeout_ms range (999 -> error)
+    {
+        std::string payload = "{\"mapping_id\":\"map1\",\"target_host\":\"1.2.3.4\","
+                              "\"target_port\":22,\"connect_timeout_ms\":999}";
+        auto frame = make_frame(MsgOpenSession, 0, payload);
+        auto result = decode_open_session(frame);
+        auto* err = std::get_if<std::string>(&result);
+        RMT_CHECK_MSG(err != nullptr, "connect_timeout_ms=999 rejected");
+    }
+
+    // Test: connect_timeout_ms range (30001 -> error)
+    {
+        std::string payload = "{\"mapping_id\":\"map1\",\"target_host\":\"1.2.3.4\","
+                              "\"target_port\":22,\"connect_timeout_ms\":30001}";
+        auto frame = make_frame(MsgOpenSession, 0, payload);
+        auto result = decode_open_session(frame);
+        auto* err = std::get_if<std::string>(&result);
+        RMT_CHECK_MSG(err != nullptr, "connect_timeout_ms=30001 rejected");
+    }
+
+    // Test: missing target_port -> error
+    {
+        std::string payload = "{\"mapping_id\":\"map1\",\"target_host\":\"1.2.3.4\","
+                              "\"connect_timeout_ms\":10000}";
+        auto frame = make_frame(MsgOpenSession, 0, payload);
+        auto result = decode_open_session(frame);
+        auto* err = std::get_if<std::string>(&result);
+        RMT_CHECK_MSG(err != nullptr, "missing target_port rejected");
+        if (err) {
+            RMT_CHECK_MSG(error_contains(*err, "target_port"),
+                          "error mentions target_port: " + *err);
+        }
+    }
+
+    // Test: mapping_id too long (>64) -> error
+    {
+        std::string payload = "{\"mapping_id\":\""
+                            + std::string(65, 'a')
+                            + "\",\"target_host\":\"1.2.3.4\","
+                              "\"target_port\":22,\"connect_timeout_ms\":10000}";
+        auto frame = make_frame(MsgOpenSession, 0, payload);
+        auto result = decode_open_session(frame);
+        auto* err = std::get_if<std::string>(&result);
+        RMT_CHECK_MSG(err != nullptr, "mapping_id too long rejected");
+        if (err) {
+            RMT_CHECK_MSG(error_contains(*err, "mapping_id"),
+                          "error mentions mapping_id: " + *err);
+        }
+    }
+
+    // Test: mapping_id empty -> error
+    {
+        std::string payload = "{\"mapping_id\":\"\",\"target_host\":\"1.2.3.4\","
+                              "\"target_port\":22,\"connect_timeout_ms\":10000}";
+        auto frame = make_frame(MsgOpenSession, 0, payload);
+        auto result = decode_open_session(frame);
+        auto* err = std::get_if<std::string>(&result);
+        RMT_CHECK_MSG(err != nullptr, "empty mapping_id rejected");
+    }
+
+    // Test: type mismatch for decode_open_session
+    {
+        auto frame = make_frame(MsgHello, 0, "{}");
+        auto result = decode_open_session(frame);
+        auto* err = std::get_if<std::string>(&result);
+        RMT_CHECK_MSG(err != nullptr, "type mismatch rejected by decode_open_session");
+        if (err) {
+            RMT_CHECK_MSG(error_contains(*err, "type mismatch"),
+                          "error mentions type mismatch: " + *err);
+        }
+    }
+
+    // Test: unknown field -> error
+    {
+        std::string payload = "{\"mapping_id\":\"map1\",\"target_host\":\"1.2.3.4\","
+                              "\"target_port\":22,\"connect_timeout_ms\":10000,"
+                              "\"extra\":1}";
+        auto frame = make_frame(MsgOpenSession, 0, payload);
+        auto result = decode_open_session(frame);
+        auto* err = std::get_if<std::string>(&result);
+        RMT_CHECK_MSG(err != nullptr, "unknown field rejected in OPEN_SESSION");
+    }
+
+    // Test: JSON parse error
+    {
+        auto frame = make_frame(MsgOpenSession, 0, "not json");
+        auto result = decode_open_session(frame);
+        auto* err = std::get_if<std::string>(&result);
+        RMT_CHECK_MSG(err != nullptr, "invalid JSON rejected in OPEN_SESSION");
+    }
+
+    // --- SESSION_OPENED ---
+
+    // Test: encode_session_opened + decode round-trip
+    {
+        SessionOpenedMessage m;
+        m.mapping_id = "map-site001-ssh";
+        m.connected_host = "192.168.1.1";
+        m.connected_port = 22;
+
+        auto frame = encode_session_opened(m);
+        RMT_CHECK(frame.header.type == MsgSessionOpened);
+
+        auto result = decode_session_opened(frame);
+        auto* msg = std::get_if<SessionOpenedMessage>(&result);
+        RMT_CHECK_MSG(msg != nullptr, "decode_session_opened succeeded");
+        if (msg) {
+            RMT_CHECK(msg->mapping_id == "map-site001-ssh");
+            RMT_CHECK(msg->connected_host == "192.168.1.1");
+            RMT_CHECK(msg->connected_port == 22);
+        }
+    }
+
+    // Test: type mismatch for decode_session_opened
+    {
+        auto frame = make_frame(MsgHello, 0, "{}");
+        auto result = decode_session_opened(frame);
+        auto* err = std::get_if<std::string>(&result);
+        RMT_CHECK_MSG(err != nullptr, "type mismatch rejected by decode_session_opened");
+    }
+
+    // Test: missing field -> error
+    {
+        std::string payload = "{\"mapping_id\":\"map1\",\"connected_host\":\"1.2.3.4\"}";
+        auto frame = make_frame(MsgSessionOpened, 0, payload);
+        auto result = decode_session_opened(frame);
+        auto* err = std::get_if<std::string>(&result);
+        RMT_CHECK_MSG(err != nullptr, "missing connected_port rejected");
+    }
+
+    // --- SESSION_OPEN_FAILED ---
+
+    // Test: encode_session_open_failed + decode round-trip
+    {
+        SessionOpenFailedMessage m;
+        m.error_code = "TARGET_CONNECTION_REFUSED";
+        m.message = "target refused the connection";
+
+        auto frame = encode_session_open_failed(m);
+        RMT_CHECK(frame.header.type == MsgSessionOpenFailed);
+
+        auto result = decode_session_open_failed(frame);
+        auto* msg = std::get_if<SessionOpenFailedMessage>(&result);
+        RMT_CHECK_MSG(msg != nullptr, "decode_session_open_failed succeeded");
+        if (msg) {
+            RMT_CHECK(msg->error_code == "TARGET_CONNECTION_REFUSED");
+            RMT_CHECK(msg->message == "target refused the connection");
+        }
+    }
+
+    // Test: type mismatch for decode_session_open_failed
+    {
+        auto frame = make_frame(MsgHello, 0, "{}");
+        auto result = decode_session_open_failed(frame);
+        auto* err = std::get_if<std::string>(&result);
+        RMT_CHECK_MSG(err != nullptr, "type mismatch rejected by decode_session_open_failed");
+    }
+
+    // Test: missing error_code -> error
+    {
+        std::string payload = "{\"message\":\"test\"}";
+        auto frame = make_frame(MsgSessionOpenFailed, 0, payload);
+        auto result = decode_session_open_failed(frame);
+        auto* err = std::get_if<std::string>(&result);
+        RMT_CHECK_MSG(err != nullptr, "missing error_code rejected");
+    }
+
+    // --- SESSION_DATA ---
+
+    // Test: encode_session_data + decode round-trip
+    {
+        const std::string text = "hello";
+        auto frame = encode_session_data(0x12345678,
+                                         reinterpret_cast<const std::uint8_t*>(text.data()),
+                                         text.size());
+        RMT_CHECK(frame.header.type == MsgSessionData);
+        RMT_CHECK(frame.header.session_id == 0x12345678);
+
+        auto result = decode_session_data(frame);
+        RMT_CHECK(result.size() == text.size());
+        std::string decoded(result.begin(), result.end());
+        RMT_CHECK(decoded == "hello");
+    }
+
+    // Test: SESSION_DATA with binary data
+    {
+        std::vector<std::uint8_t> binary = {0x00, 0x01, 0x02, 0xFF, 0xFE, 0xFD};
+        auto frame = encode_session_data(0x42,
+                                         binary.data(), binary.size());
+        auto result = decode_session_data(frame);
+        RMT_CHECK(result == binary);
+    }
+
+    // Test: encode_session_data empty payload (frame layer catches this)
+    {
+        auto frame = encode_session_data(0, nullptr, 0);
+        RMT_CHECK(frame.header.type == MsgSessionData);
+        RMT_CHECK(frame.payload.empty());
+        auto result = decode_session_data(frame);
+        RMT_CHECK(result.empty());
+    }
+
+    // --- SESSION_HALF_CLOSE ---
+
+    // Test: encode_session_half_close + decode round-trip
+    {
+        SessionHalfCloseMessage m;
+        m.direction = "write";
+
+        auto frame = encode_session_half_close(m);
+        RMT_CHECK(frame.header.type == MsgSessionHalfClose);
+
+        auto result = decode_session_half_close(frame);
+        auto* msg = std::get_if<SessionHalfCloseMessage>(&result);
+        RMT_CHECK_MSG(msg != nullptr, "decode_session_half_close succeeded");
+        if (msg) {
+            RMT_CHECK(msg->direction == "write");
+        }
+    }
+
+    // Test: direction != "write" -> error
+    {
+        std::string payload = "{\"direction\":\"read\"}";
+        auto frame = make_frame(MsgSessionHalfClose, 0, payload);
+        auto result = decode_session_half_close(frame);
+        auto* err = std::get_if<std::string>(&result);
+        RMT_CHECK_MSG(err != nullptr, "direction=read rejected");
+        if (err) {
+            RMT_CHECK_MSG(error_contains(*err, "direction"),
+                          "error mentions direction: " + *err);
+        }
+    }
+
+    // Test: type mismatch for decode_session_half_close
+    {
+        auto frame = make_frame(MsgHello, 0, "{}");
+        auto result = decode_session_half_close(frame);
+        auto* err = std::get_if<std::string>(&result);
+        RMT_CHECK_MSG(err != nullptr, "type mismatch rejected by decode_session_half_close");
+    }
+
+    // Test: unknown field -> error
+    {
+        std::string payload = "{\"direction\":\"write\",\"extra\":1}";
+        auto frame = make_frame(MsgSessionHalfClose, 0, payload);
+        auto result = decode_session_half_close(frame);
+        auto* err = std::get_if<std::string>(&result);
+        RMT_CHECK_MSG(err != nullptr, "unknown field rejected in HALF_CLOSE");
+    }
+
+    // --- CLOSE_SESSION ---
+
+    // Test: encode_close_session + decode round-trip
+    {
+        CloseSessionMessage m;
+        m.reason = "NORMAL";
+        m.message = "local peer closed";
+
+        auto frame = encode_close_session(m);
+        RMT_CHECK(frame.header.type == MsgCloseSession);
+
+        auto result = decode_close_session(frame);
+        auto* msg = std::get_if<CloseSessionMessage>(&result);
+        RMT_CHECK_MSG(msg != nullptr, "decode_close_session succeeded");
+        if (msg) {
+            RMT_CHECK(msg->reason == "NORMAL");
+            RMT_CHECK(msg->message == "local peer closed");
+        }
+    }
+
+    // Test: type mismatch for decode_close_session
+    {
+        auto frame = make_frame(MsgHello, 0, "{}");
+        auto result = decode_close_session(frame);
+        auto* err = std::get_if<std::string>(&result);
+        RMT_CHECK_MSG(err != nullptr, "type mismatch rejected by decode_close_session");
+    }
+
+    // Test: missing reason -> error
+    {
+        std::string payload = "{\"message\":\"test\"}";
+        auto frame = make_frame(MsgCloseSession, 0, payload);
+        auto result = decode_close_session(frame);
+        auto* err = std::get_if<std::string>(&result);
+        RMT_CHECK_MSG(err != nullptr, "missing reason rejected");
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -528,6 +865,7 @@ int main() {
     run_heartbeat_tests();
     run_heartbeat_ack_tests();
     run_cross_roundtrip();
+    run_session_tests();
 
     auto& c = rmt::test::ctx();
     std::printf("messages_test: %d passed, %d failed\n", c.passed, c.failed);

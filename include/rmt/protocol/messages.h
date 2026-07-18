@@ -73,4 +73,75 @@ using HeartbeatAckDecodeResult = std::variant<HeartbeatAckMessage, std::string>;
 Frame encode_heartbeat_ack(const HeartbeatAckMessage& msg);
 HeartbeatAckDecodeResult decode_heartbeat_ack(const Frame& frame);
 
+// --- OPEN_SESSION (RemoteTool -> Agent) ---
+
+struct OpenSessionMessage {
+    std::string mapping_id;         // 1-64 chars
+    std::string target_host;        // IP literal
+    int target_port = 0;            // 1-65535
+    int connect_timeout_ms = 0;     // 1000-30000
+};
+
+using OpenSessionDecodeResult = std::variant<OpenSessionMessage, std::string>;
+
+Frame encode_open_session(const OpenSessionMessage& msg);
+OpenSessionDecodeResult decode_open_session(const Frame& frame);
+
+// --- SESSION_OPENED (Agent -> RemoteTool) ---
+
+struct SessionOpenedMessage {
+    std::string mapping_id;
+    std::string connected_host;
+    int connected_port = 0;
+};
+
+using SessionOpenedDecodeResult = std::variant<SessionOpenedMessage, std::string>;
+
+Frame encode_session_opened(const SessionOpenedMessage& msg);
+SessionOpenedDecodeResult decode_session_opened(const Frame& frame);
+
+// --- SESSION_OPEN_FAILED (Agent -> RemoteTool) ---
+
+struct SessionOpenFailedMessage {
+    std::string error_code;
+    std::string message;
+};
+
+using SessionOpenFailedDecodeResult = std::variant<SessionOpenFailedMessage, std::string>;
+
+Frame encode_session_open_failed(const SessionOpenFailedMessage& msg);
+SessionOpenFailedDecodeResult decode_session_open_failed(const Frame& frame);
+
+// --- SESSION_DATA (Bidirectional) ---
+// Raw bytes, no JSON. Decode returns payload directly.
+
+using SessionDataResult = std::vector<std::uint8_t>;
+
+Frame encode_session_data(SessionId session_id,
+                          const std::uint8_t* data, std::size_t len);
+SessionDataResult decode_session_data(const Frame& frame);
+
+// --- SESSION_HALF_CLOSE (Bidirectional) ---
+
+struct SessionHalfCloseMessage {
+    std::string direction;  // must be "write"
+};
+
+using SessionHalfCloseDecodeResult = std::variant<SessionHalfCloseMessage, std::string>;
+
+Frame encode_session_half_close(const SessionHalfCloseMessage& msg);
+SessionHalfCloseDecodeResult decode_session_half_close(const Frame& frame);
+
+// --- CLOSE_SESSION (Bidirectional) ---
+
+struct CloseSessionMessage {
+    std::string reason;
+    std::string message;
+};
+
+using CloseSessionDecodeResult = std::variant<CloseSessionMessage, std::string>;
+
+Frame encode_close_session(const CloseSessionMessage& msg);
+CloseSessionDecodeResult decode_close_session(const Frame& frame);
+
 }  // namespace rmt::protocol
