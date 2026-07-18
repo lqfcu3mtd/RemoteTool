@@ -29,8 +29,11 @@
 #include <thread>
 #include <unordered_map>
 
+#include "rmt/config/config_loader.h"
 #include "rmt/tunnel/acceptor.h"
 #include "rmt/tunnel/device_manager.h"
+#include "rmt/tunnel/session_manager.h"
+#include "rmt/session/session_id.h"
 #include "event_queue.h"
 
 namespace rmt::gui {
@@ -51,6 +54,8 @@ private:
     void on_create();
     void on_timer();
     void on_close();
+    void on_add_device();
+    void refresh_mappings();
 
     // Process one EventQueue batch.
     void process_events();
@@ -59,13 +64,19 @@ private:
 
     HWND hwnd_ = nullptr;
     HWND list_devices_ = nullptr;
+    HWND list_mappings_ = nullptr;
+    HWND edit_device_id_ = nullptr;
+    HWND edit_display_name_ = nullptr;
+    HWND btn_add_device_ = nullptr;
     HWND status_bar_ = nullptr;
 
     std::unique_ptr<asio::io_context> io_;
     std::unique_ptr<tunnel::DeviceManager> devices_;
     std::unique_ptr<tunnel::Acceptor> acceptor_;
+    std::unique_ptr<tunnel::SessionManager> sessions_;
+    std::unique_ptr<session::SessionIdAllocator> id_alloc_;
     std::thread io_thread_;
-    rmt::gui::EventQueue events_;
+    rmt::gui::EventQueue events_;  // event sequence number
 
     // Device list helper: map device_id -> index in ListBox.
     std::unordered_map<std::string, int> device_index_;
