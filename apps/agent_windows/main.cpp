@@ -1,11 +1,30 @@
-// Windows Agent entry point (Phase 0 skeleton).
-// The connection state machine, target whitelist enforcement and GUI arrive
-// in later phases. This skeleton exists so the Phase 0 completion definition
-// (IMPLEMENTATION_PLAN.md section 5: "two programs can start and exit
-// normally") is satisfied.
+// Windows Agent entry point — Phase 1 (TCP connect + HELLO/HEARTBEAT + reconnect).
 #include <cstdio>
+#include <memory>
+#include <asio.hpp>
+
+#include "rmt/tunnel/agent_connection.h"
 
 int main() {
-    std::printf("Agent (Phase 0 skeleton)\n");
+    asio::io_context io;
+
+    // Phase 1: hard-coded config. Config-file loading arrives in a later phase.
+    auto cfg = rmt::tunnel::AgentConfig{
+        /*server_host*/      "127.0.0.1",
+        /*server_port*/      4433,
+        /*device_id*/        "AGENT001",
+        /*agent_version*/    "0.1.0",
+        /*platform*/         "windows-x86_64",
+    };
+
+    auto agent = std::make_shared<rmt::tunnel::AgentConnection>(io, cfg);
+    agent->set_on_state_change([](rmt::tunnel::AgentState state) {
+        const char* names[] = {"Disconnected", "Connecting", "WaitHelloAck",
+                               "Online", "Error"};
+        std::printf("[state] %s\n", names[static_cast<int>(state)]);
+    });
+
+    agent->start();
+    io.run();
     return 0;
 }

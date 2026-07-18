@@ -1,6 +1,6 @@
 # 开发状态报告
 
-版本：1.1
+版本：1.2
 日期：2026-07-18
 维护者：RemoteTool 团队
 
@@ -8,72 +8,64 @@
 
 ## 当前 Phase
 
-**Phase 0：工程初始化** — 已完成（核心层全部模块就位，两个空壳程序可构建运行，8 个测试集两端全绿）
+**Phase 1：基础 TCP、帧协议与在线状态** — 已完成（RemoteTool TCP 监听器 + Agent 连接状态机 + HELLO/HEARTBEAT + 端到端集成测试通过）
 
 ## 已完成
 
-### CMake 工程
-- `CMakeLists.txt` — 顶层 CMake，C++17，rmt_core 静态库（7 个源文件）+ 2 个空壳可执行程序 + 8 个 CTest 单元测试
-- `CMakePresets.json` — `dev-mingw`（MinGW+Ninja）+ `windows-x64-debug`（MSVC+Ninja）
-- `cmake/Dependencies.cmake` — Phase 0 无外部依赖（纯 C++17 标准库）
-- MinGW CMake：`cmake --preset dev-mingw && cmake --build --preset dev-mingw && ctest --preset dev-mingw` → 8/8 通过
-- MSVC：手动 cl.exe /W4 /O2 编译全部 8 测试 + 2 程序，零警告全过
+### Phase 0 — 工程初始化与核心工具
+- `rmt_core` 静态库（13 个源文件）+ 2 个可执行程序
+- 核心工具：error_code、frame 编解码、scope_guard、log、strict_json、atomic_write、config_schema、target_whitelist、secret_store
 
-### 核心层模块
-- `include/rmt/common/error_code.h` — 稳定错误码（连接级 / Session 级，对齐 PROTOCOL_SPEC §7）
-- `include/rmt/protocol/frame.h` + `src/protocol/frame.cpp` — RMT/1 帧编解码（增量、严格，非法输入直接失败）
-- `include/rmt/common/scope_guard.h` — RAII guard（header-only，dismiss + 移动语义，异常路径执行清理）
-- `include/rmt/common/log.h` + `src/common/log.cpp` — 线程安全日志（Debug/Info/Warn/Error，可注册 sink，sink 异常不崩溃）
-- `include/rmt/config/strict_json.h` + `src/config/strict_json.cpp` — 手写严格 JSON 解析（拒绝注释/尾逗号/重复键/BOM/错误类型，错误带行列位置）
-- `include/rmt/config/atomic_write.h` + `src/config/atomic_write.cpp` — 原子写入（同目录 tmp + rename，失败不损坏原文件）
-- `include/rmt/config/config_schema.h` + `src/config/config_schema.cpp` — 4 配置 schema 校验（remote_tool/devices/mappings/agent，fail-fast，未知字段拒绝）
-- `include/rmt/security/target_whitelist.h` + `src/security/target_whitelist.cpp` — 目标白名单（手写 IPv4/IPv6+CIDR，环路检测，空白名单全拒）
-- `include/rmt/security/secret_store.h` + `src/security/dev_file_secret_store.cpp` — SecretStore 抽象 + dev 明文实现（真实往返，magic+store_kind 校验）
+### Phase 1 — 基础 TCP + 帧协议 + 在线状态
+- `include/rmt/protocol/messages.h` + `src/protocol/messages.cpp` — HELLO/HELLO_ACK/HEARTBEAT/HEARTBEAT_ACK JSON 编解码（81 测试，严格字段校验）
+- `include/rmt/tunnel/connection.h` + `src/tunnel/connection.cpp` — TCP socket RAII + FrameDecoder（async read/write 串行化，46 测试含本地 echo server）
+- `include/rmt/tunnel/agent_connection.h` + `src/tunnel/agent_connection.cpp` — Agent 连接状态机（CONNECTING→WAIT_HELLO_ACK→ONLINE，心跳，看门狗，指数退避重连 ±20% 抖动）
+- `include/rmt/tunnel/acceptor.h` + `src/tunnel/acceptor.cpp` — RemoteTool TCP acceptor（async accept 循环）
+- `include/rmt/tunnel/device_manager.h` + `src/tunnel/device_manager.cpp` — 设备管理（HELLO 处理/重复拒绝，HEARTBEAT ACK 回复，超时清理）
 
-### 应用程序骨架
-- `apps/remote_tool/main.cpp` — RemoteTool 空壳（Phase 0 骨架，GUI/网络后续 Phase 填充）
-- `apps/agent_windows/main.cpp` — Agent 空壳
+### 应用程序
+- `apps/remote_tool/main.cpp` — Acceptor + DeviceManager 启动监听 :4433
+- `apps/agent_windows/main.cpp` — AgentConnection 连接 RemoteTool
 
-### 环境与工具链
-- MinGW GCC 16.1.0 @ `D:\tools\mingw64`（开发期）
-- VS2022 Community + MSVC 19.44 + Windows 11 SDK @ D 盘（生产构建）
-- `tools/devcheck.sh`（MinGW frame_test）、`tools/msvc-check.sh`（MSVC frame_test）、`tools/msvc-cmake.bat`（MSVC CMake，需 cmd.exe）
+### 集成测试
+- `tests/integration/hello_heartbeat_test.cpp` — 端到端 RemoteTool Acceptor + Agent HELLO 握手 + 心跳 + 断开检测（2.75s）
+
+### 依赖
+- standalone Asio 1.30.2 vendored in `third_party/asio/`
+- 环境：MinGW GCC 16.1.0 / VS2022 MSVC 19.44 + Windows 11 SDK
 
 ## 测试
 
 - 命令：`cmake --preset dev-mingw && cmake --build --preset dev-mingw && ctest --preset dev-mingw`
-- 结果：8/8 通过，531 项断言（frame 49 / scope_guard 6 / log 16 / strict_json 173 / atomic_write 42 / target_whitelist 77 / secret_store 43 / config_schema 125）
-- 两端一致：MinGW `-Wall -Wextra -Wpedantic` 与 MSVC `/W4 /O2` 均零新增警告
+- 结果：**13/13 通过**
+  - Phase 0（8）：frame 49 / scope_guard 6 / log 16 / strict_json 173 / atomic_write 42 / target_whitelist 77 / secret_store 43 / config_schema 125
+  - Phase 1（5）：connection 46 / messages 81 / agent_connection 7 / device_manager 44 / hello_heartbeat 3
+  - 总计：~712 项断言，MinGW `-Wall -Wextra -Wpedantic` 零警告
 
-### 测试覆盖
-- frame：官方向量 + 拆包/粘包 + 各类非法输入
-- scope_guard：正常/异常路径清理、dismiss、移动语义
-- log：级别过滤、sink 注册、sink 异常不崩溃、多线程并发
-- strict_json：合法/拒绝（注释/尾逗号/重复键/BOM/前导零/坏转义/未闭合/代理对）+ 错误位置
-- atomic_write：新建/覆盖/失败不损坏/临时文件清理
-- target_whitelist：CIDR 命中/不命中/回环/空白名单/域名/IPv6 开关/环路端口/非法 CIDR
-- secret_store：往返还原/空明文/32 字节 PSK/篡改拒绝
-- config_schema：4 schema 完整校验 + 未知字段 + 重复 id + 重复 local_port + 跨字段关系
+### 集成测试覆盖
+- hello_heartbeat：RemoteTool Acceptor 接受 Agent → HELLO 握手 → 设备上线回调 → 心跳交换 → Agent stop → 设备离线回调
 
 ## 已知限制
 
-- `atomic_write` 无 fsync（`std::ofstream::flush` 仅刷用户态缓冲）；真正的持久性需 platform 层 `FlushFileBuffers`/`fsync`（Phase 4+）
-- `atomic_write` 的 rename 回退方案（remove+rename）非严格原子（旧工具链下）；当前 MinGW/MSVC 主路径 `MoveFileExW+MOVEFILE_REPLACE_EXISTING` 直接覆盖，回退不触发
-- `config_schema` 不做跨文件引用校验（mappings.device_id 是否存在 devices）；留给上层加载器
-- `config_schema` 对 host 字段（bind_host / target_host / server.host）放宽为非空字符串校验，IP 字面量格式由运行时绑定层和 target_whitelist 负责
-- `SecretStore` 的 DPAPI 生产实现未做（留 `rmt::platform` Phase 4+）；当前仅 dev 明文实现
-- MSVC CMake 需在 cmd.exe 跑 `tools/msvc-cmake.bat`（PowerShell 手动 cl 已验证全部测试）
-- mbedTLS / Asio 第三方依赖未接入（Phase 1+ / Phase 4+）
-- Win32 GUI / DPAPI 实现未开始（Phase 4+）
+- `atomic_write` 无 fsync（留 platform 层 Phase 4+）
+- `SecretStore` DPAPI 生产实现未做（留 Phase 4+）
+- Phase 1 无 TLS（TCP 明文，TLS 在 Phase 5 实施）
+- Agent 配置硬编码（未加载 agent.json，留 Phase 2）
+- 重连退避在 Agent 状态机实现，RemoteTool 侧无设备列表持久化
+- MSVC CMake 需在 cmd.exe 跑 `tools/msvc-cmake.bat`
 
 ## 下一步
 
-**Phase 1：基础 TCP、帧协议与在线状态**
-- RemoteTool：Agent TCP 监听器、接受多连接、增量解码帧、HELLO/HEARTBEAT、设备在线状态、重复 device_id 拒绝、心跳超时断开
-- Agent：连接 RemoteTool、HELLO、HELLO_ACK、心跳、断线退避重连
-- 接入 standalone Asio（Phase 1 依赖，需在 `cmake/Dependencies.cmake` 固定版本）
+**Phase 2：单 Session 端口转发**
+- RemoteTool 创建固定 MappingListener
+- 接受本地 TCP 连接 → 分配 SessionId → 发送 OPEN_SESSION
+- Agent 检查目标策略并异步连接目标
+- SESSION_OPENED/FAILED 处理
+- 双向转发 SESSION_DATA + 半关闭
+- 统计双向字节数
+- 使用本地 echo server 验证双向转发 + 100 MiB 随机数据哈希一致
 
 ## 需要用户决定
 
 - 无当前阻塞项
-- Phase 1 接入 Asio 版本固定（建议 standalone Asio 1.30.2，header-only）需确认
+- Phase 2 前确认 Session 转发是否需在 Phase 1 集成测试基础上继续（已就绪）

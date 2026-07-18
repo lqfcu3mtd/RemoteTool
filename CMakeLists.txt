@@ -122,6 +122,11 @@ add_executable(device_manager_test tests/unit/device_manager_test.cpp)
 target_link_libraries(device_manager_test PRIVATE rmt_core)
 add_test(NAME device_manager_test COMMAND device_manager_test)
 
+# hello_heartbeat_test (integration: Acceptor + Agent end-to-end via loopback)
+add_executable(hello_heartbeat_test tests/integration/hello_heartbeat_test.cpp)
+target_link_libraries(hello_heartbeat_test PRIVATE rmt_core)
+add_test(NAME hello_heartbeat_test COMMAND hello_heartbeat_test)
+
 # --- 应用程序（Phase 0 空壳骨架，GUI/网络逻辑在后续 Phase 填充）---
 add_executable(remote_tool apps/remote_tool/main.cpp)
 target_link_libraries(remote_tool PRIVATE rmt_core)
