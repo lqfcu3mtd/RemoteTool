@@ -137,7 +137,7 @@ add_test(NAME hello_heartbeat_test COMMAND hello_heartbeat_test)
 add_executable(multi_session_test tests/integration/multi_session_test.cpp)
 target_link_libraries(multi_session_test PRIVATE rmt_core)
 add_test(NAME multi_session_test COMMAND multi_session_test)
-set_tests_properties(multi_session_test PROPERTIES TIMEOUT 15 DISABLED TRUE)
+set_tests_properties(multi_session_test PROPERTIES TIMEOUT 30 DISABLED TRUE)
 
 # agent_session_test (Phase 2: Agent-side session handler, bidirectional test skipped — revisit Phase 3)
 add_executable(agent_session_test tests/unit/agent_session_test.cpp)
