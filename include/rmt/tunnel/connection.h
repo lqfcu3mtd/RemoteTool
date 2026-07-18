@@ -22,6 +22,7 @@
 #include "rmt/common/error_code.h"
 #include "rmt/common/log.h"
 #include "rmt/protocol/frame.h"
+#include "rmt/security/tls_context.h"
 
 namespace rmt::tunnel {
 
@@ -72,6 +73,10 @@ public:
     TunnelState state() const noexcept;
     const std::string& remote_address() const;
 
+    // Phase 5: attach a TLS-PSK context. If set, the handshake is performed
+    // after TCP connect (client) or immediately (server-side accept).
+    void set_tls(std::unique_ptr<rmt::security::TlsPskContext> tls);
+
 private:
     void do_read();
     void do_write();
@@ -97,6 +102,8 @@ private:
     bool writing_ = false;
 
     std::vector<std::uint8_t> read_buf_;
+
+    std::unique_ptr<rmt::security::TlsPskContext> tls_;  // Phase 5
 
     rmt::common::Logger logger_;
 };

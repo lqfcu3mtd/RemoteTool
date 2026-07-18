@@ -66,6 +66,16 @@ void TunnelConnection::connect(const std::string& host, std::uint16_t port,
                 if (cb) cb(rmt::ErrorCode::InternalError);
                 return;
             }
+            // Phase 5: optional TLS handshake.
+            if (tls_) {
+                if (!tls_->handshake(socket_.native_handle())) {
+                    logger_.error("TLS handshake failed: " + tls_->last_error());
+                    handle_error(rmt::ErrorCode::InternalError);
+                    if (cb) cb(rmt::ErrorCode::InternalError);
+                    return;
+                }
+                logger_.info("TLS handshake ok for " + remote_address_);
+            }
             state_ = TunnelState::Connected;
             logger_.info("TunnelConnection connected to " + remote_address_);
             if (cb) cb(rmt::ErrorCode::Ok);
@@ -79,6 +89,10 @@ void TunnelConnection::close() {
     }
     logger_.info("TunnelConnection closing " + remote_address_);
     handle_error(rmt::ErrorCode::Normal);
+}
+
+void TunnelConnection::set_tls(std::unique_ptr<rmt::security::TlsPskContext> tls) {
+    tls_ = std::move(tls);
 }
 
 void TunnelConnection::send_frame(const rmt::protocol::Frame& frame,
