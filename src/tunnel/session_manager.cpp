@@ -224,8 +224,32 @@ void SessionManager::forward_local_to_agent(
         session_id, data.data(), len);
     s->bytes_local_out += len;
 
-    s->tunnel->send_frame(frame, [](rmt::ErrorCode /*ec*/) {
-        // Errors logged by TunnelConnection.
+    // Phase 3b: backpressure tracking.
+    constexpr std::uint64_t kHighWater = 256 * 1024;
+    constexpr std::uint64_t kLowWater  = 128 * 1024;
+    s->pending_bytes += len;
+    // Pause local read if we are above high-water.
+    if (s->pending_bytes >= kHighWater && !s->read_paused) {
+        s->read_paused = true;
+        logger_.info("SessionManager: session " + std::to_string(session_id)
+                     + " paused (backpressure, pending="
+                     + std::to_string(s->pending_bytes) + ")");
+    }
+
+    auto sid_cb = session_id;
+    s->tunnel->send_frame(frame, [this, sid_cb, len](rmt::ErrorCode /*ec*/) {
+        auto* s2 = find_session(sid_cb);
+        if (!s2) return;
+        if (s2->pending_bytes >= len) s2->pending_bytes -= len;
+        else s2->pending_bytes = 0;
+        // Resume read when below low-water.
+        if (s2->read_paused && s2->pending_bytes < kLowWater) {
+            s2->read_paused = false;
+            logger_.info("SessionManager: session " + std::to_string(sid_cb)
+                         + " resumed (pending="
+                         + std::to_string(s2->pending_bytes) + ")");
+            start_local_read(sid_cb);
+        }
     });
 }
 
@@ -292,6 +316,9 @@ const SessionManager::SessionEntry* SessionManager::find_session(
 void SessionManager::start_local_read(std::uint32_t session_id) {
     auto* s = find_session(session_id);
     if (!s || !s->local_socket || s->reading_local) {
+        return;
+    }
+    if (s->read_paused) {   // Phase 3b: backpressure
         return;
     }
     if (s->state != SessionState::Connected) {

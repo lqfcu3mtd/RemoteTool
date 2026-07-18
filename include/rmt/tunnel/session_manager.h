@@ -97,6 +97,10 @@ private:
         // Track whether we are currently reading from local_socket to avoid
         // overlapping reads.
         bool reading_local = false;
+        // Phase 3b: backpressure — pause local read when pending bytes exceed
+        // high-water mark (256 KiB), resume below low-water (128 KiB).
+        std::uint64_t pending_bytes = 0;
+        bool read_paused = false;
     };
 
     SessionEntry* find_session(std::uint32_t session_id);
