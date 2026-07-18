@@ -42,6 +42,7 @@ add_library(rmt_core STATIC
     src/config/strict_json.cpp
     src/config/atomic_write.cpp
     src/config/config_schema.cpp
+    src/config/config_loader.cpp
     src/security/target_whitelist.cpp
     src/security/dev_file_secret_store.cpp
     src/protocol/messages.cpp
@@ -147,6 +148,11 @@ set_tests_properties(agent_session_test PROPERTIES TIMEOUT 15)
 add_executable(session_manager_test tests/unit/session_manager_test.cpp)
 target_link_libraries(session_manager_test PRIVATE rmt_core)
 add_test(NAME session_manager_test COMMAND session_manager_test)
+
+# config_loader_test (Phase 4: config file load/save round-trip)
+add_executable(config_loader_test tests/unit/config_loader_test.cpp)
+target_link_libraries(config_loader_test PRIVATE rmt_core)
+add_test(NAME config_loader_test COMMAND config_loader_test)
 
 # --- 应用程序（Phase 0 空壳骨架，GUI/网络逻辑在后续 Phase 填充）---
 add_executable(remote_tool apps/remote_tool/main.cpp)
