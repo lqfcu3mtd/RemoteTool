@@ -8,7 +8,12 @@
 
 ## 当前 Phase
 
-**Phase 3：多 Session 和多映射** — 基本完成（多 Session 表 + 控制帧优先 + 并发上限 + 背压 + Agent 掉线清理就位；大规模并发集成测试待补充）
+**Phase 4：配置持久化与 SecretStore** — 进行中（DPAPI + ConfigLoader 完成，15/15）
+
+### Phase 4 新增
+- `include/rmt/platform/dpapi_secret_store.h` + `src/platform/dpapi_secret_store.cpp` — DPAPI 生产实现（CryptProtectData/CryptUnprotectData, #ifdef _WIN32）
+- `include/rmt/config/config_loader.h` + `src/config/config_loader.cpp` — 配置加载/保存（4 种配置文件，24 测试往返验证）
+- 下一步：Win32 GUI（主窗口 + 设备/映射列表）
 
 ## 已完成
 
