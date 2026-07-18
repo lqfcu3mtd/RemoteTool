@@ -1,31 +1,18 @@
-// RemoteTool entry point — Phase 1 (TCP + HELLO/HEARTBEAT + device tracking).
-#include <cstdio>
-#include <asio.hpp>
-
-#include "rmt/tunnel/acceptor.h"
-#include "rmt/tunnel/device_manager.h"
+// RemoteTool entry point — Phase 4 GUI (Win32).
+// Runs the Win32 message loop on the main thread; network io_context
+// runs on a background thread. Network events update the UI via a
+// thread-safe EventQueue.
+#ifdef _WIN32
+#include "gui/main_window.h"
 
 int main() {
-    asio::io_context io;
-
-    rmt::tunnel::DeviceManager dm(io);
-    rmt::tunnel::Acceptor acceptor(io, dm);
-
-    dm.set_on_device_online([](const rmt::tunnel::DeviceEntry& entry) {
-        std::printf("[device online]  %-16s  %s  %s\n",
-                    entry.device_id.c_str(),
-                    entry.remote_address.c_str(),
-                    entry.agent_version.c_str());
-    });
-    dm.set_on_device_offline([](const rmt::tunnel::DeviceEntry& entry) {
-        std::printf("[device offline] %s\n", entry.device_id.c_str());
-    });
-
-    // Bind to all interfaces on the default agent port.
-    acceptor.start("0.0.0.0", 4433);
-    dm.start_cleanup_timer();
-
-    std::printf("RemoteTool listening on :4433\n");
-    io.run();
-    return 0;
+    rmt::gui::MainWindow app;
+    return app.run();
 }
+#else
+#include <cstdio>
+int main() {
+    std::printf("RemoteTool requires Windows (Win32 GUI).\n");
+    return 1;
+}
+#endif

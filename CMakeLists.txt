@@ -154,9 +154,12 @@ add_executable(config_loader_test tests/unit/config_loader_test.cpp)
 target_link_libraries(config_loader_test PRIVATE rmt_core)
 add_test(NAME config_loader_test COMMAND config_loader_test)
 
-# --- 应用程序（Phase 0 空壳骨架，GUI/网络逻辑在后续 Phase 填充）---
-add_executable(remote_tool apps/remote_tool/main.cpp)
-target_link_libraries(remote_tool PRIVATE rmt_core)
+# --- 应用程序（Phase 4 GUI）---
+add_executable(remote_tool WIN32
+    apps/remote_tool/main.cpp
+    apps/remote_tool/gui/main_window.cpp
+)
+target_link_libraries(remote_tool PRIVATE rmt_core comctl32)
 
 add_executable(agent_windows apps/agent_windows/main.cpp)
 target_link_libraries(agent_windows PRIVATE rmt_core)
