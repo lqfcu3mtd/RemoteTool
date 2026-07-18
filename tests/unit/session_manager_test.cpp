@@ -387,6 +387,34 @@ void test_disconnected_tunnel_state() {
     c.cleanup_session(s);
 }
 
+// ===== Phase 3a: multiple concurrent sessions — independent lifecycle =====
+void test_multi_session_independent() {
+    Ctx c;
+    auto s1 = c.create_session_with_socket();
+    auto s2 = c.create_session_with_socket();
+    auto s3 = c.create_session_with_socket();
+
+    // Open all three.
+    c.session_mgr.on_session_frame(s1.id, c.make_session_opened(s1.id, "m1", "10.0.0.1", 1));
+    c.session_mgr.on_session_frame(s2.id, c.make_session_opened(s2.id, "m2", "10.0.0.2", 2));
+    c.session_mgr.on_session_frame(s3.id, c.make_session_opened(s3.id, "m3", "10.0.0.3", 3));
+
+    RMT_CHECK(c.session_mgr.session_state(s1.id) == SessionState::Connected);
+    RMT_CHECK(c.session_mgr.session_state(s2.id) == SessionState::Connected);
+    RMT_CHECK(c.session_mgr.session_state(s3.id) == SessionState::Connected);
+
+    // Close s2 only. s1 and s3 must remain untouched.
+    c.session_mgr.close_session(s2.id);
+    RMT_CHECK(c.session_mgr.session_state(s1.id) == SessionState::Connected);
+    // s2 is now erased — query via a known-existing session's method is safe,
+    // but session_state on a deleted ID is undefined. We just verify s1/s3.
+    RMT_CHECK(c.session_mgr.session_state(s3.id) == SessionState::Connected);
+
+    // Clean up the remaining sessions.
+    c.session_mgr.close_session(s1.id);
+    c.session_mgr.close_session(s3.id);
+}
+
 }  // namespace
 
 int main() {
@@ -403,6 +431,7 @@ int main() {
     test_session_id_allocation();
     test_ignore_frame_on_closed();
     test_disconnected_tunnel_state();
+    test_multi_session_independent();
 
     auto& ctx = rmt::test::ctx();
     std::printf("\nsession_manager_test: %d passed, %d failed\n",
