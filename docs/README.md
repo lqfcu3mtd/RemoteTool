@@ -9,7 +9,12 @@
 3. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)：模块边界、阶段任务和完成定义。
 4. [CONFIG_SPEC.md](CONFIG_SPEC.md)：文件位置、JSON字段、默认值和密钥落盘。
 5. [TEST_PLAN.md](TEST_PLAN.md)：测试矩阵和发布验收。
-6. [AI_HANDOFF_PROMPT.md](AI_HANDOFF_PROMPT.md)：交给代码大模型时使用的统一提示词。
+6. [CODING_STANDARDS.md](CODING_STANDARDS.md)：命名、命名空间、头文件、平台隔离、RAII、提交粒度。
+7. [ENVIRONMENT.md](ENVIRONMENT.md)：开发环境验证记录（工具链位置、版本、验证脚本、已知坑）。
+8. [INSTALL.md](INSTALL.md)：工具链安装与构建验证步骤。
+9. [AI_HANDOFF_PROMPT.md](AI_HANDOFF_PROMPT.md)：交给代码大模型时使用的统一提示词。
+
+> 接手进度看仓库根目录的 `STATUS.md`——它是项目进度的唯一真实来源。
 
 ## 已确认的关键决策
 
@@ -35,7 +40,7 @@
 - 不因后续Phase尚未实现而添加假实现或静默fallback；
 - 不改变协议字段、默认端口或安全规则来绕过失败测试；
 - 每次交付说明已完成、测试结果、剩余范围和已知限制；
-- 任何模型开始编码前都必须读取上述四份规范文件。
+- 任何模型开始编码前都必须读取上述规范文件 + `STATUS.md` + `CODING_STANDARDS.md`。
 
 ## 环境准备
 

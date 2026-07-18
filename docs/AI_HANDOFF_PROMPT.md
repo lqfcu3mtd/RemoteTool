@@ -1,6 +1,36 @@
 # 通用AI开发交接提示词
 
-下面的提示词可以复制给 Codex、Claude Code、Cursor、Gemini CLI 或其他具备仓库读写和命令执行能力的代码模型。
+> 本文档面向任何具备仓库读写和命令执行能力的 AI agent（Codex、Claude Code、Cursor、Gemini CLI、WorkBuddy 等）。不依赖任何 agent 的私人记忆或会话历史——所有知识都在仓库内。
+
+## 接手前必读（按顺序）
+
+| 序号 | 文件 | 内容 |
+|---|---|---|
+| 1 | `STATUS.md` | **当前进度、已完成、测试结果、已知限制、下一步**（进度的唯一真实来源） |
+| 2 | `docs/README.md` | 文档索引 |
+| 3 | `docs/DEVELOPMENT_SPEC.md` | 产品规格（最高优先级） |
+| 4 | `docs/PROTOCOL_SPEC.md` | RMT/1 协议规范 |
+| 5 | `docs/IMPLEMENTATION_PLAN.md` | Phase 0-6 实施计划 |
+| 6 | `docs/CONFIG_SPEC.md` | 配置 schema |
+| 7 | `docs/TEST_PLAN.md` | 测试计划 |
+| 8 | `docs/CODING_STANDARDS.md` | 代码规范（命名、命名空间、头文件、平台隔离、RAII、提交粒度） |
+| 9 | `docs/ENVIRONMENT.md` | 开发环境验证记录（工具链位置、版本、验证脚本） |
+
+> **不要依赖历史聊天记录或 agent 私人记忆。** 仓库内文档是唯一需求来源。
+
+## 接手后第一步：验证环境
+
+```bash
+# 开发期验证（MinGW，免管理员）
+bash tools/devcheck.sh
+# 期望：frame_test: 49 passed, 0 failed
+
+# 生产构建验证（MSVC，需 VS2022）
+bash tools/msvc-check.sh
+# 期望：frame_test: 49 passed, 0 failed
+```
+
+若环境不满足，参见 `docs/INSTALL.md` 和 `docs/ENVIRONMENT.md`。
 
 ## 首次开始项目
 
@@ -8,19 +38,28 @@
 你正在开发 Remote Maintenance Tunnel Tool。
 
 在修改任何代码之前，按顺序完整阅读：
-1. docs/README.md
-2. docs/DEVELOPMENT_SPEC.md
-3. docs/PROTOCOL_SPEC.md
-4. docs/IMPLEMENTATION_PLAN.md
-5. docs/CONFIG_SPEC.md
-6. docs/TEST_PLAN.md
+1. STATUS.md — 当前进度
+2. docs/README.md — 文档索引
+3. docs/DEVELOPMENT_SPEC.md — 产品规格
+4. docs/PROTOCOL_SPEC.md — 协议规范
+5. docs/IMPLEMENTATION_PLAN.md — 实施计划
+6. docs/CONFIG_SPEC.md — 配置规范
+7. docs/TEST_PLAN.md — 测试计划
+8. docs/CODING_STANDARDS.md — 代码规范
+9. docs/ENVIRONMENT.md — 环境验证
 
 这些文件是完整需求来源。不要依赖历史聊天，不要自行扩展产品范围。
+
+接手后先验证环境：
+- 运行 bash tools/devcheck.sh（MinGW 开发期）
+- 运行 bash tools/msvc-check.sh（MSVC 生产构建）
+- 确认 frame_test 49/49 通过后再开始编码
 
 开发规则：
 - 严格按 IMPLEMENTATION_PLAN.md 的 Phase 顺序推进；
 - 当前只实施我指定的Phase；
 - 先检查仓库现状和已有改动，不覆盖用户已有内容；
+- 遵守 docs/CODING_STANDARDS.md 的命名、命名空间、头文件、平台隔离和 RAII 规范；
 - 实现功能后运行该Phase要求的测试；
 - 不添加fallback、旧协议兼容、静默降级或未要求功能；
 - 不以空实现、永远成功、忽略错误或放宽测试来通过验收；
@@ -31,10 +70,15 @@
 - 只有会改变产品行为且无法由文档解决的问题才询问用户；其他实现细节自行作出保守、简单、可测试的决定并记录。
 
 每完成一个Phase：
-1. 运行构建和全部相关测试；
+1. 运行构建和全部相关测试（devcheck.sh + msvc-check.sh）；
 2. 更新 STATUS.md；
 3. 报告已完成内容、实际测试命令和结果、已知限制、下一Phase；
 4. 保持仓库处于可继续开发的状态。
+
+Git 提交规范（见 CODING_STANDARDS.md §10）：
+- 每个 Phase 拆为小提交（interfaces → happy path → error handling → tests → docs）；
+- 每个提交必须可编译；
+- 提交信息格式：phaseN: <描述>
 
 现在先检查仓库，然后实施 Phase 0。不要开始 Phase 1，直到Phase 0的完成定义全部满足。
 ```
@@ -68,12 +112,21 @@ README.md、DEVELOPMENT_SPEC.md、PROTOCOL_SPEC.md、IMPLEMENTATION_PLAN.md、CO
 ## 继续未完成项目
 
 ```text
-请先读取 docs/README.md、全部规范文件、STATUS.md、git状态和最近提交。
+请先读取 STATUS.md、docs/README.md、docs/CODING_STANDARDS.md、docs/ENVIRONMENT.md、全部规范文件、git状态和最近提交。
 确定最后一个真正满足完成定义的Phase，以及当前工作区未完成的改动。
+
+接手后先验证环境（必须）：
+- bash tools/devcheck.sh — MinGW 开发期验证
+- bash tools/msvc-check.sh — MSVC 生产构建验证
+- 确认 frame_test 49/49 通过后再继续编码
 
 从未完成的最早Phase继续，不要重写已经通过测试的模块，不要假设STATUS.md声明完成就一定完成；用构建和测试验证。
 
 完成当前Phase后运行回归测试并更新STATUS.md。若无产品级阻塞，继续下一Phase，最多推进到Phase 6。
+
+Git 提交规范（见 CODING_STANDARDS.md §10）：
+- 每个 Phase 拆为小提交，每个提交必须可编译；
+- 提交信息格式：phaseN: <描述>
 ```
 
 ## 代码审查提示词
