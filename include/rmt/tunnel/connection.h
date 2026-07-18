@@ -30,6 +30,10 @@ enum class TunnelState { Disconnected, Connecting, Connected, Closed };
 class TunnelConnection {
 public:
     explicit TunnelConnection(asio::io_context& io);
+    // Server-side variant: take ownership of an already-connected socket
+    // (typically from an acceptor). The socket must be open and connected.
+    // After callbacks are registered, call begin_receive() to start reading.
+    TunnelConnection(asio::io_context& io, asio::ip::tcp::socket&& socket);
     ~TunnelConnection();
 
     TunnelConnection(const TunnelConnection&) = delete;
@@ -60,6 +64,10 @@ public:
     // close, local close, or fatal error). After invocation the callback is
     // cleared so it will not fire again.
     void set_on_closed(std::function<void(rmt::ErrorCode)> callback);
+
+    // Begin async read loop. Must only be called after constructing with an
+    // accepted socket and after registering the on_frame callback.
+    void begin_receive();
 
     TunnelState state() const noexcept;
     const std::string& remote_address() const;

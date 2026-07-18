@@ -8,6 +8,26 @@ TunnelConnection::TunnelConnection(asio::io_context& io)
     logger_.set_level(rmt::common::LogLevel::Info);
 }
 
+TunnelConnection::TunnelConnection(asio::io_context& io, asio::ip::tcp::socket&& socket)
+    : io_(io), socket_(std::move(socket)) {
+    read_buf_.resize(8192);
+    logger_.set_level(rmt::common::LogLevel::Info);
+
+    asio::error_code ec;
+    auto endpoint = socket_.remote_endpoint(ec);
+    if (!ec) {
+        remote_address_ = endpoint.address().to_string() + ":"
+                        + std::to_string(endpoint.port());
+        state_ = TunnelState::Connected;
+        logger_.info("TunnelConnection accepted from " + remote_address_);
+    } else {
+        // Socket is not connected — leave state as Disconnected.
+        // begin_receive() should not be called in this case.
+        logger_.error("TunnelConnection accept: invalid socket ("
+                      + ec.message() + ")");
+    }
+}
+
 TunnelConnection::~TunnelConnection() {
     // Synchronous close: does not require an active io_context event loop.
     // Suitable when io_context may already be stopped at destruction time.
@@ -88,6 +108,14 @@ void TunnelConnection::set_on_closed(std::function<void(rmt::ErrorCode)> callbac
 
 TunnelState TunnelConnection::state() const noexcept {
     return state_;
+}
+
+void TunnelConnection::begin_receive() {
+    if (state_ != TunnelState::Connected) {
+        logger_.warn("TunnelConnection::begin_receive called in wrong state");
+        return;
+    }
+    do_read();
 }
 
 const std::string& TunnelConnection::remote_address() const {

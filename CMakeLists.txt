@@ -46,6 +46,9 @@ add_library(rmt_core STATIC
     src/security/dev_file_secret_store.cpp
     src/protocol/messages.cpp
     src/tunnel/connection.cpp
+    src/tunnel/agent_connection.cpp
+    src/tunnel/device_manager.cpp
+    src/tunnel/acceptor.cpp
 )
 
 target_include_directories(rmt_core
@@ -108,6 +111,16 @@ add_test(NAME connection_test COMMAND connection_test)
 add_executable(messages_test tests/unit/messages_test.cpp)
 target_link_libraries(messages_test PRIVATE rmt_core)
 add_test(NAME messages_test COMMAND messages_test)
+
+# agent_connection_test (uses Asio TCP + timers, tests Agent state machine)
+add_executable(agent_connection_test tests/unit/agent_connection_test.cpp)
+target_link_libraries(agent_connection_test PRIVATE rmt_core)
+add_test(NAME agent_connection_test COMMAND agent_connection_test)
+
+# device_manager_test (tests RemoteTool device management, no real TCP needed)
+add_executable(device_manager_test tests/unit/device_manager_test.cpp)
+target_link_libraries(device_manager_test PRIVATE rmt_core)
+add_test(NAME device_manager_test COMMAND device_manager_test)
 
 # --- 应用程序（Phase 0 空壳骨架，GUI/网络逻辑在后续 Phase 填充）---
 add_executable(remote_tool apps/remote_tool/main.cpp)
