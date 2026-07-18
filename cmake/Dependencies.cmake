@@ -11,3 +11,5 @@
 #
 # All dependencies ship with the repo in third_party/ - no network fetch
 # required for a cmake --preset ... build.
+# Phase 5: mbedTLS 3.6.1 (TLS-PSK) - pending full CMake integration
+# (framework submodule issue, will resolve next session)

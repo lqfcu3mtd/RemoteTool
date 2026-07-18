@@ -54,6 +54,7 @@ add_library(rmt_core STATIC
     src/tunnel/session_manager.cpp
     src/tunnel/mapping_listener.cpp
     src/platform/dpapi_secret_store.cpp
+    src/security/tls_context_stub.cpp
 )
 
 target_include_directories(rmt_core
