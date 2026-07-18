@@ -64,6 +64,14 @@ public:
     // to agent).
     void close_session(std::uint32_t session_id);
 
+    // Phase 3b: concurrency limit per mapping (default 32).
+    void set_max_sessions(int limit) noexcept { max_sessions_ = limit; }
+    int max_sessions() const noexcept { return max_sessions_; }
+    std::size_t active_session_count() const;
+
+    // Phase 3b: clean up all sessions for a device when it goes offline.
+    void remove_all_sessions_for_device(const std::string& device_id);
+
     // Byte statistics (Phase 2 requirement).
     std::uint64_t bytes_local_in(std::uint32_t sid) const;
     std::uint64_t bytes_local_out(std::uint32_t sid) const;
@@ -105,6 +113,7 @@ private:
     DeviceManager& devices_;
     rmt::session::SessionIdAllocator& id_alloc_;
     std::unordered_map<std::uint32_t, SessionEntry> sessions_;
+    int max_sessions_ = 32;  // Phase 3b: per-mapping concurrency limit
     std::function<void(std::uint32_t)> on_session_closed_;
     rmt::common::Logger logger_;
 };

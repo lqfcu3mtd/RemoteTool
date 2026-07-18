@@ -34,6 +34,14 @@ std::uint32_t SessionManager::create_session(
         return 0;
     }
 
+    // Phase 3b: enforce per-mapping concurrency limit.
+    if (active_session_count() >= static_cast<std::size_t>(max_sessions_)) {
+        logger_.warn("SessionManager: max sessions reached (" +
+                     std::to_string(max_sessions_) + "), rejecting new session");
+        id_alloc_.release(sid);
+        return 0;
+    }
+
     SessionEntry entry;
     entry.state = SessionState::Idle;
     entry.tunnel = std::move(tunnel);
@@ -401,6 +409,29 @@ void SessionManager::cleanup_session(std::uint32_t session_id) {
 
     // Remove from map (tunnel shared_ptr may keep the tunnel alive).
     sessions_.erase(it);
+}
+
+std::size_t SessionManager::active_session_count() const {
+    std::size_t count = 0;
+    for (const auto& [id, entry] : sessions_) {
+        if (entry.state != SessionState::Idle && entry.state != SessionState::Closed)
+            ++count;
+    }
+    return count;
+}
+
+void SessionManager::remove_all_sessions_for_device(const std::string& device_id) {
+    // Collect matching session IDs first (cannot iterate+erase concurrently).
+    std::vector<std::uint32_t> to_close;
+    for (const auto& [id, entry] : sessions_) {
+        if (entry.device_id == device_id)
+            to_close.push_back(id);
+    }
+    for (auto id : to_close) {
+        close_session(id);
+    }
+    logger_.info("SessionManager: removed " + std::to_string(to_close.size()) +
+                 " sessions for device " + device_id);
 }
 
 }  // namespace rmt::tunnel
