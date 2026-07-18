@@ -39,6 +39,9 @@ add_library(rmt_core STATIC
     src/common/log.cpp
     src/config/strict_json.cpp
     src/config/atomic_write.cpp
+    src/config/config_schema.cpp
+    src/security/target_whitelist.cpp
+    src/security/dev_file_secret_store.cpp
 )
 
 target_include_directories(rmt_core
@@ -73,3 +76,18 @@ add_test(NAME strict_json_test COMMAND strict_json_test)
 add_executable(atomic_write_test tests/unit/atomic_write_test.cpp)
 target_link_libraries(atomic_write_test PRIVATE rmt_core)
 add_test(NAME atomic_write_test COMMAND atomic_write_test)
+
+# target_whitelist_test
+add_executable(target_whitelist_test tests/unit/target_whitelist_test.cpp)
+target_link_libraries(target_whitelist_test PRIVATE rmt_core)
+add_test(NAME target_whitelist_test COMMAND target_whitelist_test)
+
+# secret_store_test
+add_executable(secret_store_test tests/unit/secret_store_test.cpp)
+target_link_libraries(secret_store_test PRIVATE rmt_core)
+add_test(NAME secret_store_test COMMAND secret_store_test)
+
+# config_schema_test (uses strict_json + config_schema via rmt_core)
+add_executable(config_schema_test tests/unit/config_schema_test.cpp)
+target_link_libraries(config_schema_test PRIVATE rmt_core)
+add_test(NAME config_schema_test COMMAND config_schema_test)
