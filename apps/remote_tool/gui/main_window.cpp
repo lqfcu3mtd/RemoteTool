@@ -9,6 +9,7 @@
 #define NOMINMAX
 #endif
 #include "main_window.h"
+#include <algorithm>
 
 namespace rmt::gui {
 namespace {
@@ -21,7 +22,8 @@ namespace {
     constexpr int IDC_MAP_DEVICE   = 107;
     constexpr int IDC_MAP_TARGET   = 108;
     constexpr int IDC_MAP_LPORT    = 109;
-}
+    constexpr int IDC_DEL_MAPPING  = 110;
+}  // anonymous namespace
 
 MainWindow* MainWindow::instance_ = nullptr;
 
@@ -72,6 +74,10 @@ LRESULT MainWindow::handle_message(UINT msg, WPARAM wp, LPARAM lp) {
             if (LOWORD(wp) == IDC_ADD_DEVICE) on_add_device();
             if (LOWORD(wp) == IDC_DEL_DEVICE) on_delete_device();
             if (LOWORD(wp) == IDC_ADD_MAPPING) on_add_mapping();
+            if (LOWORD(wp) == IDC_DEL_MAPPING) {
+                int s = SendMessage(list_mappings_, LB_GETCURSEL, 0, 0);
+                if (s != LB_ERR) SendMessage(list_mappings_, LB_DELETESTRING, s, 0);
+            }
             break;
         case WM_CLOSE:  on_close(); DestroyWindow(hwnd_); break;
         case WM_DESTROY: PostQuitMessage(0); break;
@@ -129,7 +135,9 @@ void MainWindow::on_create() {
         WS_CHILD | WS_VISIBLE, 270, 222, 35, 22, hwnd_, nullptr,
         GetModuleHandle(nullptr), nullptr);
     btn_add_mapping_ = CreateWindowEx(0, L"BUTTON", L"+Map", WS_CHILD | WS_VISIBLE,
-        310, 220, 55, 26, hwnd_, (HMENU)IDC_ADD_MAPPING, GetModuleHandle(nullptr), nullptr);
+        310, 220, 50, 26, hwnd_, (HMENU)IDC_ADD_MAPPING, GetModuleHandle(nullptr), nullptr);
+    CreateWindowEx(0, L"BUTTON", L"Del", WS_CHILD | WS_VISIBLE,
+        365, 220, 40, 26, hwnd_, (HMENU)IDC_DEL_MAPPING, GetModuleHandle(nullptr), nullptr);
 
     SetWindowText(edit_map_name_, L"name");
     SetWindowText(edit_map_device_, L"device");
@@ -217,12 +225,29 @@ void MainWindow::refresh_mappings() {
 void MainWindow::on_delete_device() {
     int sel = SendMessage(list_devices_, LB_GETCURSEL, 0, 0);
     if (sel == LB_ERR) return;
+
+    // Get device_id from the list text.
+    wchar_t buf[256] = {};
+    SendMessage(list_devices_, LB_GETTEXT, sel, (LPARAM)buf);
+    std::string text(buf, buf + wcslen(buf));
+    auto sp = text.find(' ');
+    std::string dev_id = (sp != std::string::npos) ? text.substr(0, sp) : text;
+
     SendMessage(list_devices_, LB_DELETESTRING, sel, 0);
-    // Update device_index_ map.
     for (auto it = device_index_.begin(); it != device_index_.end(); ) {
         if (it->second == sel) it = device_index_.erase(it);
         else if (it->second > sel) { it->second--; ++it; }
         else ++it;
+    }
+
+    // Remove from devices.json.
+    auto lr = config::load_devices_config("devices.json");
+    if (auto* cfg = config::try_get_loaded(lr)) {
+        config::DevicesConfig copy = *cfg;
+        auto& devs = copy.devices;
+        devs.erase(std::remove_if(devs.begin(), devs.end(),
+            [&](const config::DeviceRecord& d) { return d.id == dev_id; }), devs.end());
+        config::save_devices_config("devices.json", copy);
     }
 }
 
