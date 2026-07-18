@@ -1,0 +1,52 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 24,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "windows-x64-debug",
+            "displayName": "MSVC x64 Debug (Ninja)",
+            "description": "生产构建：MSVC + Ninja。在 VS2022 开发者命令行运行，或用 tools/msvc-cmake.sh",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            }
+        },
+        {
+            "name": "dev-mingw",
+            "displayName": "MinGW GCC Debug (Ninja)",
+            "description": "开发期：MinGW GCC + Ninja，免管理员",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build-dev",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "windows-x64-debug",
+            "configurePreset": "windows-x64-debug"
+        },
+        {
+            "name": "dev-mingw",
+            "configurePreset": "dev-mingw"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "windows-x64-debug",
+            "configurePreset": "windows-x64-debug"
+        },
+        {
+            "name": "dev-mingw",
+            "configurePreset": "dev-mingw"
+        }
+    ]
+}

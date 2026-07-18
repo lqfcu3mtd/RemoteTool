@@ -8,9 +8,16 @@
 
 ## 当前 Phase
 
-**Phase 0：工程初始化** — 进行中（核心层首片已写，CMake 工程待搭建）
+**Phase 0：工程初始化** — 进行中（CMake 工程已搭建，核心层首片已写并验证）
 
 ## 已完成
+
+### CMake 工程（2026-07-18）
+- `CMakeLists.txt` — 顶层 CMake，C++17，rmt_core 静态库，frame_test 收编进 CTest
+- `CMakePresets.json` — `dev-mingw`（MinGW+Ninja）+ `windows-x64-debug`（MSVC+Ninja）
+- `cmake/Dependencies.cmake` — 第三方依赖占位（Phase 0 无外部依赖）
+- MinGW CMake 验证：`cmake --preset dev-mingw && cmake --build --preset dev-mingw && ctest --preset dev-mingw` → 100% 通过
+- MSVC CMake：用 `tools/msvc-cmake.bat`（在 cmd.exe 里跑 vcvars64 + cmake）
 
 ### Phase 0/1 核心层（首片）
 - `include/rmt/common/error_code.h` — 稳定错误码（连接级 / Session 级，对齐 PROTOCOL_SPEC §7）
@@ -46,24 +53,20 @@
 
 ## 已知限制
 
-- CMake 工程尚未搭建（当前用 devcheck.sh / msvc-check.sh 手动编译）
-- `rmt_core` 静态库尚未建立
-- CTest 未接入
+- MSVC CMake 需在 cmd.exe 里跑 `tools/msvc-cmake.bat`（Git Bash 下 PATH 带空格传递给 cmd 子进程会丢失）
 - Phase 0 剩余任务未完成：目标白名单、配置 schema、原子写入、JSON 解析、SecretStore 接口
 - mbedTLS / Asio 第三方依赖未接入（Phase 1+ / Phase 4+）
 - Win32 GUI / DPAPI 实现未开始（Phase 4+）
 
 ## 下一步
 
-1. 搭建 CMake 工程：`CMakeLists.txt` + `CMakePresets.json` + `cmake/Dependencies.cmake`
-2. 建立 `rmt_core` 静态库，将 `frame_test` 收编进 CTest
-3. 补全 Phase 0 核心层：
+1. 补全 Phase 0 核心层（用多 agent 流程，见 `docs/DEV_WORKFLOW.md`）：
    - 目标白名单（CIDR + 端口匹配）
    - 配置 schema 校验 + 原子写入 + 严格 JSON 解析
    - `SecretStore` 接口（dev 文件实现 / 生产 DPAPI 实现）
    - 日志接口（INFO / WARN / ERROR）
    - 范围退出清理工具（RAII guard）
-4. 验证：`cmake --preset windows-x64-debug && cmake --build build && ctest`
+2. 验证：`cmake --preset dev-mingw && cmake --build --preset dev-mingw && ctest --preset dev-mingw`
 
 ## 需要用户决定
 

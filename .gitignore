@@ -2,6 +2,7 @@
 build/
 build-msvc/
 build-devcheck/
+build-dev/
 *.exe
 *.o
 *.obj
