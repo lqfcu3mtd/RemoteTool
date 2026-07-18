@@ -161,5 +161,8 @@ add_executable(remote_tool WIN32
 )
 target_link_libraries(remote_tool PRIVATE rmt_core comctl32)
 
-add_executable(agent_windows apps/agent_windows/main.cpp)
-target_link_libraries(agent_windows PRIVATE rmt_core)
+add_executable(agent_windows WIN32
+    apps/agent_windows/main.cpp
+    apps/agent_windows/gui/agent_window.cpp
+)
+target_link_libraries(agent_windows PRIVATE rmt_core comctl32)
