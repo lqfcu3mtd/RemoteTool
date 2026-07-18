@@ -44,6 +44,8 @@ add_library(rmt_core STATIC
     src/config/config_schema.cpp
     src/security/target_whitelist.cpp
     src/security/dev_file_secret_store.cpp
+    src/protocol/messages.cpp
+    src/tunnel/connection.cpp
 )
 
 target_include_directories(rmt_core
@@ -52,7 +54,7 @@ target_include_directories(rmt_core
         ${CMAKE_SOURCE_DIR}/third_party/asio/asio/include
 )
 
-target_link_libraries(rmt_core PUBLIC ws2_32)
+target_link_libraries(rmt_core PUBLIC ws2_32 mswsock)
 
 # --- 测试 ---
 enable_testing()
@@ -96,6 +98,16 @@ add_test(NAME secret_store_test COMMAND secret_store_test)
 add_executable(config_schema_test tests/unit/config_schema_test.cpp)
 target_link_libraries(config_schema_test PRIVATE rmt_core)
 add_test(NAME config_schema_test COMMAND config_schema_test)
+
+# connection_test (uses Asio TCP echo server in test)
+add_executable(connection_test tests/unit/connection_test.cpp)
+target_link_libraries(connection_test PRIVATE rmt_core)
+add_test(NAME connection_test COMMAND connection_test)
+
+# messages_test
+add_executable(messages_test tests/unit/messages_test.cpp)
+target_link_libraries(messages_test PRIVATE rmt_core)
+add_test(NAME messages_test COMMAND messages_test)
 
 # --- 应用程序（Phase 0 空壳骨架，GUI/网络逻辑在后续 Phase 填充）---
 add_executable(remote_tool apps/remote_tool/main.cpp)
