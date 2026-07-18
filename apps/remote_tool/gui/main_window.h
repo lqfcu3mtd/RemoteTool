@@ -55,6 +55,8 @@ private:
     void on_timer();
     void on_close();
     void on_add_device();
+    void on_delete_device();
+    void on_add_mapping();
     void refresh_mappings();
 
     // Process one EventQueue batch.
@@ -68,6 +70,12 @@ private:
     HWND edit_device_id_ = nullptr;
     HWND edit_display_name_ = nullptr;
     HWND btn_add_device_ = nullptr;
+    HWND edit_map_name_ = nullptr;
+    HWND edit_map_device_ = nullptr;
+    HWND edit_map_target_ = nullptr;
+    HWND edit_map_port_ = nullptr;
+    HWND edit_map_local_port_ = nullptr;
+    HWND btn_add_mapping_ = nullptr;
     HWND status_bar_ = nullptr;
 
     std::unique_ptr<asio::io_context> io_;
