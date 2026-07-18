@@ -54,7 +54,7 @@ add_library(rmt_core STATIC
     src/tunnel/session_manager.cpp
     src/tunnel/mapping_listener.cpp
     src/platform/dpapi_secret_store.cpp
-    src/security/tls_context_stub.cpp
+    src/security/tls_mbedtls.cpp
 )
 
 target_include_directories(rmt_core
@@ -63,7 +63,7 @@ target_include_directories(rmt_core
         ${CMAKE_SOURCE_DIR}/third_party/asio/asio/include
 )
 
-target_link_libraries(rmt_core PUBLIC ws2_32 mswsock crypt32)
+target_link_libraries(rmt_core PUBLIC ws2_32 mswsock crypt32 mbedtls)
 
 # --- 测试 ---
 enable_testing()

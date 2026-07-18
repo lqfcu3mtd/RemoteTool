@@ -11,5 +11,15 @@
 #
 # All dependencies ship with the repo in third_party/ - no network fetch
 # required for a cmake --preset ... build.
-# Phase 5: mbedTLS 3.6.1 (TLS-PSK) - pending full CMake integration
-# (framework submodule issue, will resolve next session)
+
+# --- mbedTLS 2.28.7 LTS (source build, Phase 5 TLS-PSK) ---
+set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+# mbedTLS uses MS-specific %I64u format; suppress with GCC/Clang.
+set(_prev_cflags "${CMAKE_C_FLAGS}")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-format -Wno-error=format")
+add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/mbedtls EXCLUDE_FROM_ALL)
+set(CMAKE_C_FLAGS "${_prev_cflags}")
+unset(CMAKE_POLICY_VERSION_MINIMUM)
+message(STATUS "mbedTLS 2.28.7 ready")
