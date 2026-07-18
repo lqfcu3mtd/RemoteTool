@@ -26,6 +26,8 @@ else()
     endif()
 endif()
 
+add_compile_definitions(ASIO_STANDALONE)
+
 # --- 输出目录 ---
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
@@ -47,7 +49,10 @@ add_library(rmt_core STATIC
 target_include_directories(rmt_core
     PUBLIC
         ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/third_party/asio/asio/include
 )
+
+target_link_libraries(rmt_core PUBLIC ws2_32)
 
 # --- 测试 ---
 enable_testing()
