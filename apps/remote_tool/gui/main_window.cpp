@@ -82,14 +82,27 @@ LRESULT MainWindow::handle_message(UINT msg, WPARAM wp, LPARAM lp) {
 // ---- event handlers ----
 
 void MainWindow::on_create() {
-    // Create device list.
+    // Device list label + listbox.
+    CreateWindowEx(0, L"STATIC", L"Devices",
+        WS_CHILD | WS_VISIBLE, 10, 5, 600, 18, hwnd_,
+        nullptr, GetModuleHandle(nullptr), nullptr);
     list_devices_ = CreateWindowEx(0, L"LISTBOX", nullptr,
         WS_CHILD | WS_VISIBLE | WS_BORDER | LBS_NOTIFY,
-        10, 10, 600, 400, hwnd_, nullptr, GetModuleHandle(nullptr), nullptr);
+        10, 24, 600, 120, hwnd_, nullptr, GetModuleHandle(nullptr), nullptr);
+
+    // Mapping list label + listbox (placeholder).
+    CreateWindowEx(0, L"STATIC", L"Mappings",
+        WS_CHILD | WS_VISIBLE, 10, 150, 600, 18, hwnd_,
+        nullptr, GetModuleHandle(nullptr), nullptr);
+    auto list_mappings = CreateWindowEx(0, L"LISTBOX", nullptr,
+        WS_CHILD | WS_VISIBLE | WS_BORDER,
+        10, 169, 600, 80, hwnd_, nullptr, GetModuleHandle(nullptr), nullptr);
+    SendMessage(list_mappings, LB_ADDSTRING, 0,
+        (LPARAM)L"  (configure mappings in a later release)");
 
     // Status bar.
     status_bar_ = CreateWindowEx(0, L"STATIC", L"Ready",
-        WS_CHILD | WS_VISIBLE, 10, 420, 600, 20, hwnd_, nullptr,
+        WS_CHILD | WS_VISIBLE, 10, 260, 600, 20, hwnd_, nullptr,
         GetModuleHandle(nullptr), nullptr);
 
     // Start timer (100 ms) for EventQueue polling.
