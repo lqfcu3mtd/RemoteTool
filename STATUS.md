@@ -1,12 +1,42 @@
 # 开发状态报告
 
-版本：1.3
-日期：2026-07-18
+版本：1.5
+日期：2026-07-18 (end of day)
 维护者：RemoteTool 团队
 
-> 本文件是项目进度的唯一真实来源。任何 agent 接手前应先读本文件，再用构建和测试验证。
+> 本文件是项目进度的唯一真实来源。
 
 ## 当前 Phase
+
+**Phase 6：发布与验证** — 进行中。MSVC 生产构建已验证（frame/messages/config_loader 全过），MinGW 16/16 ctest 全绿。
+
+## 整体进度
+
+| Phase | 状态 |
+|---|---|
+| 0 — 工程初始化 + 核心工具 | ✅ |
+| 1 — 基础 TCP + HELLO/HEARTBEAT | ✅ |
+| 2 — 单 Session 端口转发 | ✅ |
+| 3 — 多 Session + 控制帧优先 + 背压 | ✅ |
+| 4 — GUI + 配置持久化 + DPAPI | ✅ |
+| 5 — TLS-PSK (mbedTLS) | ✅ (client path) |
+| 6 — MSVC 验证 / 发布 | 🟡 (关键模块验证通过) |
+| **总计** | **~90%** |
+
+## 构建与测试
+
+- MinGW CMake: 16/16 ctest 全绿 (~800 assertions, zero warnings)
+- MSVC x64 /O2: frame_test(49) + messages_test(135) + config_loader_test(24) 全过
+- mbedTLS 2.28.7 vendored + MinGW 构建通过
+- 两个 Win32 GUI 应用均编译成功
+
+## 已知限制
+
+- 2 集成测试 disabled（async chain hang: agent_session bidirectional + multi_session）
+- mbedTLS MSVC + 完整 GUI MSVC link 待验证
+- server-side TLS 待实现（需 per-device PSK after HELLO）
+- atomic_write 无 fsync
+- 无 30 分钟稳定性测试
 
 **Phase 4：配置持久化与 SecretStore** — 进行中（DPAPI + ConfigLoader 完成，15/15）
 
