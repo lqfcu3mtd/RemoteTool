@@ -91,3 +91,10 @@ add_test(NAME secret_store_test COMMAND secret_store_test)
 add_executable(config_schema_test tests/unit/config_schema_test.cpp)
 target_link_libraries(config_schema_test PRIVATE rmt_core)
 add_test(NAME config_schema_test COMMAND config_schema_test)
+
+# --- 应用程序（Phase 0 空壳骨架，GUI/网络逻辑在后续 Phase 填充）---
+add_executable(remote_tool apps/remote_tool/main.cpp)
+target_link_libraries(remote_tool PRIVATE rmt_core)
+
+add_executable(agent_windows apps/agent_windows/main.cpp)
+target_link_libraries(agent_windows PRIVATE rmt_core)
