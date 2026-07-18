@@ -8,7 +8,7 @@
 
 ## 当前 Phase
 
-**Phase 2：单 Session 端口转发** — 基本完成（Session 消息编解码 + MappingListener + SessionManager + SessionIdAllocator 就位；AgentSession 实现完成但双向转发测试因异步链 hang 暂 disabled）
+**Phase 3：多 Session 和多映射** — 基本完成（多 Session 表 + 控制帧优先 + 并发上限 + 背压 + Agent 掉线清理就位；大规模并发集成测试待补充）
 
 ## 已完成
 
@@ -38,6 +38,13 @@
 - `include/rmt/tunnel/session_manager.h` + `src/tunnel/session_manager.cpp` — RemoteTool Session 管理器（状态转移、双向转发、统计，33 测试）
 - DeviceManager 扩展：`get_connection()` + `set_on_unhandled_frame()`（Session 帧分发）
 
+### Phase 3 — 多 Session 与背压
+- TunnelConnection 控制帧优先：`control_queue_` + `data_queue_`，do_write 优先发控制帧（PROTOCOL_SPEC §11）
+- SessionManager 并发上限：`set_max_sessions(32)` + `active_session_count()` + `create_session` 拒绝超限
+- SessionManager Agent 掉线清理：`remove_all_sessions_for_device()`
+- SessionManager 背压：高低水位（256 KiB / 128 KiB），暂停/恢复 local socket 读
+- 多 Session 并发验证：`test_multi_session_independent`（3 Session 独立生命周期）
+
 ### 依赖
 - standalone Asio 1.30.2 vendored in `third_party/asio/`
 - 环境：MinGW GCC 16.1.0 / VS2022 MSVC 19.44 + Windows 11 SDK
@@ -45,9 +52,20 @@
 ## 测试
 
 - 命令：`cmake --preset dev-mingw && cmake --build --preset dev-mingw && ctest --preset dev-mingw`
-- 结果：**15/15 运行通过，1 disabled**（agent_session_test 双向转发异步链需修复）
-  - Phase 0（8）、Phase 1（5）、Phase 2（3）：session_manager 33、messages 新增 54 session 测试、agent_session disabled
+- 结果：**15/15 通过**
+  - Phase 0（8）、Phase 1（5）、Phase 2（1 session_manager + 1 messages expanded）、Phase 3（1 session_manager expanded）
   - 总计 ~800 项断言，MinGW `-Wall -Wextra -Wpedantic` 零警告
+
+### 已知限制
+- `agent_session_test` 双向转发异步链 test_bidirectional 注释（Phase 3 大规模集成测试将替代）
+- 大规模并发集成测试未做（32/128 并发 echo + 30 分钟稳定性）
+- 无 TLS（Phase 5）
+- MSVC CMake 需在 cmd.exe 跑
+
+## 下一步
+
+**Phase 3 收尾**：大规模并发集成测试（32 echo + 背压验证）
+**Phase 4**：RemoteTool GUI + 配置持久化（Win32 控件 + 设备/映射管理）
 
 ### 集成测试覆盖
 - hello_heartbeat：RemoteTool Acceptor 接受 Agent → HELLO 握手 → 设备上线回调 → 心跳交换 → Agent stop → 设备离线回调
