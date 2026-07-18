@@ -43,8 +43,15 @@ int AgentWindow::run() {
 }
 
 LRESULT CALLBACK AgentWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
-    if (instance_ && instance_->hwnd_ == hwnd)
-        return instance_->handle_message(msg, wp, lp);
+    if (msg == WM_NCCREATE) {
+        auto* cs = reinterpret_cast<CREATESTRUCT*>(lp);
+        auto* self = reinterpret_cast<AgentWindow*>(cs->lpCreateParams);
+        SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+        self->hwnd_ = hwnd;
+    }
+    auto* self = reinterpret_cast<AgentWindow*>(
+        GetWindowLongPtr(hwnd, GWLP_USERDATA));
+    if (self) return self->handle_message(msg, wp, lp);
     return DefWindowProc(hwnd, msg, wp, lp);
 }
 

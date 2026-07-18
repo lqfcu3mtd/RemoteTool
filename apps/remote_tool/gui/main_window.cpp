@@ -61,8 +61,15 @@ int MainWindow::run() {
 }
 
 LRESULT CALLBACK MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
-    auto* self = instance_;
-    if (self && self->hwnd_ == hwnd) return self->handle_message(msg, wp, lp);
+    if (msg == WM_NCCREATE) {
+        auto* cs = reinterpret_cast<CREATESTRUCT*>(lp);
+        auto* self = reinterpret_cast<MainWindow*>(cs->lpCreateParams);
+        SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+        self->hwnd_ = hwnd;  // set before WM_CREATE so on_create can use it
+    }
+    auto* self = reinterpret_cast<MainWindow*>(
+        GetWindowLongPtr(hwnd, GWLP_USERDATA));
+    if (self) return self->handle_message(msg, wp, lp);
     return DefWindowProc(hwnd, msg, wp, lp);
 }
 
