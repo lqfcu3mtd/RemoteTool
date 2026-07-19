@@ -6,6 +6,7 @@
 #define IDD_DEVICE_DIALOG  201
 #define IDD_MAPPING_DIALOG 202
 #define IDD_ABOUT_DIALOG   203
+#define IDD_SETTINGS_DIALOG 204
 
 #define IDR_MAINMENU       210
 
@@ -28,3 +29,9 @@
 #define IDC_MD_LPORT       1112
 #define IDC_MD_HOST        1113
 #define IDC_MD_TPORT       1114
+
+// --- Settings dialog controls ---
+#define IDC_ST_BIND_HOST   1120
+#define IDC_ST_AGENT_PORT  1121
+#define IDC_ST_HB_TIMEOUT  1122
+#define IDC_ST_MAX_SESS    1123
