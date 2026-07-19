@@ -34,6 +34,8 @@ g++ --version | head -1
 cmake --version | head -1
 
 # --- configure & build ----------------------------------------------------
+# Build cache: build-release/ (delete-able, regeneratable)
+# Final distribution: dist/ — absolute Windows path printed at the end
 BUILD_DIR="build-release"
 DIST_DIR="dist"
 rm -rf "$BUILD_DIR" "$DIST_DIR"
@@ -86,4 +88,14 @@ for exe in "$DIST_DIR/remote_tool.exe" "$DIST_DIR/agent.exe"; do
     echo
 done
 
-echo "=== Green distribution ready in dist/ ==="
+echo "=== Green distribution ready ==="
+echo
+# Convert the POSIX path to a Windows-style absolute path for the user.
+if command -v cygpath >/dev/null 2>&1; then
+    DIST_ABS="$(cygpath -w "$(cd "$DIST_DIR" && pwd)")"
+else
+    DIST_ABS="$(cd "$DIST_DIR" && pwd)"
+fi
+echo "  Absolute path: $DIST_ABS"
+echo "  Files:"
+ls "$DIST_DIR/" | sed 's/^/    /'

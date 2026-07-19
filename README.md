@@ -4,15 +4,18 @@
 
 ## 绿色发布（Phase 6）
 
-整个发行包**仅 2 个 exe**：
+整个发行包**仅 2 个 exe**，全部输出到固定路径：
 
 ```
-dist/
+D:\coding\RemoteTool\dist\
 ├── remote_tool.exe    1.5 MB
-└── agent.exe          446 KB
+├── agent.exe          1.4 MB
+└── README.md
 ```
 
-无 DLL 依赖（MinGW 运行时已静态链入）、无 .json / .dll / README 等附属文件，复制到目标机器即可运行。
+无 DLL 依赖（MinGW 运行时已静态链入）、无 .json / .dll 等附属文件，复制到目标机器即可运行。
+
+> **输出路径固定**：`D:\coding\RemoteTool\dist\`（相对路径 `dist/` 也可访问，脚本会打印绝对路径）。
 
 ### 构建
 
@@ -20,19 +23,25 @@ dist/
 bash tools/build-release.sh
 ```
 
-输出落在 `dist/`，自动 strip 符号 + 静态链接 mbedTLS 瘦配置（PSK + AES-128-GCM only）。
+脚本会：
+1. 清理 `build-release/` 和 `dist/`
+2. cmake Release 配置（自动启用 mbedTLS 瘦配置 + 静态链接 + /Os + strip）
+3. ninja 编译（~30s）
+4. 拷贝 2 个 exe 到 `dist/`
+5. 打印绝对路径 + 体积对比 + DLL 依赖检查
 
 ### 使用
 
 **RemoteTool** (运行在公司工程师的机器)：
-1. 双击 `remote_tool.exe`
+1. 双击 `D:\coding\RemoteTool\dist\remote_tool.exe`
 2. 菜单 `Edit → Add device...`，记下生成的配对码（Phase 4 临时；Phase 5 接通真协议）
 3. 把设备 ID + Server 地址告诉现场工程师
 
 **Agent** (运行在现场的电脑)：
-1. 第一次启动会自动生成 `agent.json` 默认配置（`AGENT001` / `127.0.0.1:4433`）
-2. 点 `Settings...`，把 Device ID 改成工程师给的 ID、Server 改成 RemoteTool 机器的 IP
-3. 状态显示 `Online` 即连接成功
+1. 复制 `D:\coding\RemoteTool\dist\agent.exe` 到现场电脑任意目录
+2. 第一次双击会自动在同目录生成 `agent.json`（默认 `AGENT001` / `127.0.0.1:4433`）
+3. 点 `Settings...`，把 Device ID 改成工程师给的 ID、Server 改成 RemoteTool 机器的 IP
+4. 状态显示 `Online` 即连接成功
 
 > Phase 4 临时：`Settings` 写明文 `device_id` 到 `agent.json`；Phase 5 接通一次性配对码 + 长期 PSK 后会替换此流程。
 
