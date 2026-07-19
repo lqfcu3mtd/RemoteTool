@@ -180,7 +180,10 @@ void test_open_denied() {
     io.run_for(std::chrono::milliseconds(50));
 }
 
-void test_bidirectional() {
+// Disabled per STATUS.md (async chain hang; replaced by Phase 3 integration
+// tests). Kept for reference; [[maybe_unused]] silences the unused-function
+// warning while the test is not registered in main().
+[[maybe_unused]] void test_bidirectional() {
     asio::io_context io;
 
     auto ea = std::make_shared<asio::ip::tcp::acceptor>(

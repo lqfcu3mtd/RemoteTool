@@ -43,3 +43,7 @@ Desktop.ini
 build-msvc-cmake/
 build-release/
 dist/
+
+# E2E smoke scratch dir (tools/smoke_e2e.py)
+.smoke-e2e/
+.smoke/

@@ -38,6 +38,11 @@ else()
 endif()
 
 add_compile_definitions(ASIO_STANDALONE)
+# Target Windows 7+ for the Win32/Asio API surface (silences the standalone
+# Asio fallback #warning about _WIN32_WINNT being undefined).
+if(WIN32)
+    add_compile_definitions(_WIN32_WINNT=0x0601 WINVER=0x0601)
+endif()
 
 # --- 输出目录 ---
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -62,6 +67,7 @@ add_library(rmt_core STATIC
     src/tunnel/device_manager.cpp
     src/tunnel/acceptor.cpp
     src/tunnel/agent_session.cpp
+    src/tunnel/agent_session_manager.cpp
     src/tunnel/session_manager.cpp
     src/tunnel/mapping_listener.cpp
     src/platform/dpapi_secret_store.cpp
