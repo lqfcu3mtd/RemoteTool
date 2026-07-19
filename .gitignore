@@ -38,3 +38,8 @@ Desktop.ini
 *.tmp
 *~
 *.log
+
+# Workbuddy release artifacts (not committed)
+build-msvc-cmake/
+build-release/
+dist/

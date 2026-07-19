@@ -136,12 +136,16 @@ int MainWindow::run() {
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
     wc.lpszClassName = L"RemoteToolMain";
+    wc.hIcon = LoadIcon(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_APPICON));
+    if (!wc.hIcon) wc.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
     RegisterClassEx(&wc);
+
+    HMENU menu_bar = LoadMenu(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDR_MAINMENU));
 
     hwnd_ = CreateWindowEx(0, L"RemoteToolMain", L"RemoteTool",
                            WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                            CW_USEDEFAULT, CW_USEDEFAULT, kWindowW, kWindowH,
-                           nullptr, nullptr, GetModuleHandle(nullptr), this);
+                           nullptr, menu_bar, GetModuleHandle(nullptr), this);
     if (!hwnd_) return 1;
 
     MSG msg;
@@ -182,6 +186,35 @@ LRESULT MainWindow::handle_message(UINT msg, WPARAM wp, LPARAM lp) {
                 case IDC_MAP_STOP:       on_stop_mapping(); break;
                 case IDC_MAP_DELETE:     on_delete_mapping(); break;
                 case IDC_MAP_FILTER_CLEAR: on_clear_mapping_filter(); break;
+                // Menu commands.
+                case IDM_FILE_EXIT:        on_close(); DestroyWindow(hwnd_); break;
+                case IDM_EDIT_ADD_DEVICE:  on_add_device(); break;
+                case IDM_EDIT_ADD_MAPPING: on_add_mapping(); break;
+                case IDM_FILE_SETTINGS:    MessageBox(hwnd_,
+                    L"Settings dialog is planned for Phase 4c.",
+                    L"RemoteTool", MB_OK | MB_ICONINFORMATION); break;
+                case IDM_VIEW_REFRESH:     refresh_devices_list();
+                                            refresh_mappings_list();
+                                            update_status_bar(); break;
+                case IDM_VIEW_SHOW_ALL:    on_clear_mapping_filter(); break;
+                case IDM_HELP_ABOUT: {
+                    HICON h = LoadIcon(GetModuleHandle(nullptr),
+                                       MAKEINTRESOURCE(IDI_APPICON));
+                    std::wstring about = L"RemoteTool v0.1.0\n\n"
+                        L"Lightweight reverse tunnel for remote maintenance.\n\n"
+                        L"Per DEVELOPMENT_SPEC.md (v1.0).\n"
+                        L"Phase 4 MVP build (PSK auth wiring in Phase 5).";
+                    MSGBOXPARAMS mp = {};
+                    mp.cbSize = sizeof(mp);
+                    mp.hwndOwner = hwnd_;
+                    mp.hInstance = GetModuleHandle(nullptr);
+                    mp.lpszText = about.c_str();
+                    mp.lpszCaption = L"About RemoteTool";
+                    mp.dwStyle = MB_USERICON | MB_OK;
+                    if (h) mp.lpszIcon = MAKEINTRESOURCE(IDI_APPICON);
+                    MessageBoxIndirect(&mp);
+                    break;
+                }
             }
             break;
         }
@@ -444,6 +477,39 @@ void MainWindow::on_notify(NMHDR* nm) {
     } else if (nm->code == NM_DBLCLK) {
         if (nm->idFrom == IDC_LIST_DEVICES)  on_edit_device();
         if (nm->idFrom == IDC_LIST_MAPPINGS) on_edit_mapping();
+    } else if (nm->code == NM_CUSTOMDRAW) {
+        // Subtle color hints: green for online, gray for offline; green for
+        // running mappings, gray for stopped.
+        auto* cd = reinterpret_cast<NMLVCUSTOMDRAW*>(nm);
+        if (cd->nmcd.dwDrawStage == CDDS_PREPAINT) {
+            SetWindowLongPtr(hwnd_, DWLP_MSGRESULT, CDRF_NOTIFYITEMDRAW);
+            return;
+        }
+        if (cd->nmcd.dwDrawStage == CDDS_ITEMPREPAINT) {
+            int row = static_cast<int>(cd->nmcd.dwItemSpec);
+            if (nm->idFrom == IDC_LIST_DEVICES &&
+                row >= 0 && row < static_cast<int>(device_rows_.size())) {
+                cd->clrText = device_rows_[row].online
+                    ? RGB(0x0f, 0x6e, 0x56)   // online green
+                    : RGB(0x88, 0x88, 0x88);  // offline gray
+            } else if (nm->idFrom == IDC_LIST_MAPPINGS) {
+                // Map back from displayed row to underlying row.
+                int displayed = 0, actual = -1;
+                for (size_t i = 0; i < mapping_rows_.size(); ++i) {
+                    if (!filter_device_id_.empty() &&
+                        mapping_rows_[i].device_id != filter_device_id_) continue;
+                    if (displayed == row) { actual = static_cast<int>(i); break; }
+                    ++displayed;
+                }
+                if (actual >= 0) {
+                    cd->clrText = mapping_rows_[actual].running
+                        ? RGB(0x0f, 0x6e, 0x56)
+                        : RGB(0x88, 0x88, 0x88);
+                }
+            }
+            SetWindowLongPtr(hwnd_, DWLP_MSGRESULT, CDRF_DODEFAULT);
+            return;
+        }
     }
 }
 

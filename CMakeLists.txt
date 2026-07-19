@@ -15,14 +15,25 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 if(MSVC)
     add_compile_options(/W4 /permissive- /EHsc)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
-    # Release 优化
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
-        add_compile_options(/O2)
+        # /Os   - size optimization
+        # /Gy   - separate functions for linker COMDAT folding
+        # /GL   - whole-program optimization (LTCG)
+        add_compile_options(/Os /Gy /GL)
+        add_compile_definitions(NDEBUG)
+        add_link_options(/LTCG /OPT:REF /OPT:ICF /DEBUG:NONE)
     endif()
 else()
     add_compile_options(-Wall -Wextra -Wpedantic)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
-        add_compile_options(-O2)
+        # -Os                 - size optimization
+        # -ffunction-sections - one section per function (for --gc-sections)
+        # -fdata-sections     - one section per data item
+        add_compile_options(-Os -ffunction-sections -fdata-sections)
+        add_compile_definitions(NDEBUG)
+        # --gc-sections drops unreferenced sections (mbedTLS leftovers)
+        # -s strips symbols at link time
+        add_link_options(-Wl,--gc-sections -Wl,-s)
     endif()
 endif()
 
@@ -157,26 +168,17 @@ add_test(NAME config_loader_test COMMAND config_loader_test)
 
 # --- 应用程序（Phase 4 GUI）---
 # When building with MinGW, the resulting .exe depends on the GCC runtime
-# DLLs (libgcc_s_seh-1, libstdc++-6, libwinpthread-1). On Windows the loader
-# looks in the .exe's directory first, so copy them next to the binary
-# as a post-build step. Detect the MinGW bin dir from the compiler path.
-if(MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    get_filename_component(_mingw_bin_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
-    set(_mingw_runtime_dlls
-        "${_mingw_bin_dir}/libgcc_s_seh-1.dll"
-        "${_mingw_bin_dir}/libstdc++-6.dll"
-        "${_mingw_bin_dir}/libwinpthread-1.dll")
-endif()
-
-function(cbmk_copy_mingw_runtime target)
-    if(NOT MINGW)
-        return()
+# DLLs (libgcc_s_seh-1, libstdc++-6, libwinpthread-1). For the green
+# distribution (only 2 .exe files in dist/), we statically link the runtime
+# so no DLLs are needed at runtime. MSVC keeps the dynamic CRT because it
+# already requires vcruntime140.dll system-wide.
+function(cbmk_set_link_flags target)
+    if(MINGW AND CMAKE_BUILD_TYPE STREQUAL "Release")
+        target_link_options(${target} PRIVATE
+            -static
+            -static-libgcc
+            -static-libstdc++)
     endif()
-    add_custom_command(TARGET ${target} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${_mingw_runtime_dlls}
-            $<TARGET_FILE_DIR:${target}>
-        COMMENT "Copying MinGW runtime DLLs next to ${target}.exe")
 endfunction()
 
 add_executable(remote_tool WIN32
@@ -189,11 +191,15 @@ target_include_directories(remote_tool PRIVATE
     ${CMAKE_SOURCE_DIR}/apps/remote_tool
 )
 target_link_libraries(remote_tool PRIVATE rmt_core comctl32)
-cbmk_copy_mingw_runtime(remote_tool)
+cbmk_set_link_flags(remote_tool)
 
 add_executable(agent_windows WIN32
     apps/agent_windows/main.cpp
     apps/agent_windows/gui/agent_window.cpp
+    apps/agent_windows/resources/agent.rc
+)
+target_include_directories(agent_windows PRIVATE
+    ${CMAKE_SOURCE_DIR}/apps/agent_windows
 )
 target_link_libraries(agent_windows PRIVATE rmt_core comctl32)
-cbmk_copy_mingw_runtime(agent_windows)
+cbmk_set_link_flags(agent_windows)
