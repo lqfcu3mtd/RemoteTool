@@ -1,0 +1,34 @@
+// Resource script for RemoteTool — dialog templates only.
+// Window icon uses Windows default (no custom .ico bundled yet).
+#include <windows.h>
+#include "resource.h"
+
+IDD_DEVICE_DIALOG DIALOGEX 0, 0, 320, 100
+CAPTION "Device"
+FONT 9, "Segoe UI"
+BEGIN
+    LTEXT        "Device ID",    -1,  10, 10, 80, 14
+    EDITTEXT     IDC_DD_ID,     100,  8, 200, 14, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT        "Display name", -1,  10, 32, 80, 14
+    EDITTEXT     IDC_DD_NAME,   100, 30, 200, 14, ES_AUTOHSCROLL | WS_TABSTOP
+    DEFPUSHBUTTON "OK",         IDOK,  160, 60, 70, 24, WS_TABSTOP
+    PUSHBUTTON   "Cancel",     IDCANCEL, 240, 60, 70, 24, WS_TABSTOP
+END
+
+IDD_MAPPING_DIALOG DIALOGEX 0, 0, 340, 180
+CAPTION "Port mapping"
+FONT 9, "Segoe UI"
+BEGIN
+    LTEXT        "Name",         -1,  10, 10, 80, 14
+    EDITTEXT     IDC_MD_NAME,   100,  8, 220, 14, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT        "Device",       -1,  10, 32, 80, 14
+    COMBOBOX     IDC_MD_DEVICE, 100, 30, 220, 200, CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL
+    LTEXT        "Local port",   -1,  10, 54, 80, 14
+    EDITTEXT     IDC_MD_LPORT,  100, 52,  80, 14, ES_NUMBER | WS_TABSTOP
+    LTEXT        "Target host",  -1,  10, 76, 80, 14
+    EDITTEXT     IDC_MD_HOST,   100, 74, 220, 14, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT        "Target port",  -1,  10, 98, 80, 14
+    EDITTEXT     IDC_MD_TPORT,  100, 96,  80, 14, ES_NUMBER | WS_TABSTOP
+    DEFPUSHBUTTON "OK",         IDOK,  180, 140, 70, 24, WS_TABSTOP
+    PUSHBUTTON   "Cancel",     IDCANCEL, 260, 140, 70, 24, WS_TABSTOP
+END

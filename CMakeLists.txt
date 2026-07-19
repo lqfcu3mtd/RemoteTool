@@ -159,6 +159,11 @@ add_test(NAME config_loader_test COMMAND config_loader_test)
 add_executable(remote_tool WIN32
     apps/remote_tool/main.cpp
     apps/remote_tool/gui/main_window.cpp
+    apps/remote_tool/gui/dialogs.cpp
+    apps/remote_tool/resources/remote_tool.rc
+)
+target_include_directories(remote_tool PRIVATE
+    ${CMAKE_SOURCE_DIR}/apps/remote_tool
 )
 target_link_libraries(remote_tool PRIVATE rmt_core comctl32)
 
