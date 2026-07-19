@@ -51,7 +51,7 @@ int MainWindow::run() {
 
     hwnd_ = CreateWindowEx(0, L"RemoteToolMain", L"RemoteTool",
                            WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                           CW_USEDEFAULT, CW_USEDEFAULT, 640, 400,
+                           CW_USEDEFAULT, CW_USEDEFAULT, 820, 620,
                            nullptr, nullptr, GetModuleHandle(nullptr), this);
     if (!hwnd_) return 1;
 
@@ -94,68 +94,64 @@ LRESULT MainWindow::handle_message(UINT msg, WPARAM wp, LPARAM lp) {
 }
 
 void MainWindow::on_create() {
-    // ---- Layout ----
-    // Devices section
-    CreateWindowEx(0, L"STATIC", L"Devices",
-        WS_CHILD | WS_VISIBLE, 10, 5, 300, 16, hwnd_, nullptr, GetModuleHandle(nullptr), nullptr);
+    auto hi = GetModuleHandle(nullptr);
+
+    // ---- Devices group ----
+    CreateWindowEx(0, L"BUTTON", L"Devices", BS_GROUPBOX | WS_CHILD | WS_VISIBLE,
+        10, 10, 800, 270, hwnd_, nullptr, hi, nullptr);
     list_devices_ = CreateWindowEx(0, L"LISTBOX", nullptr,
         WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | LBS_NOTIFY,
-        10, 24, 300, 100, hwnd_, nullptr, GetModuleHandle(nullptr), nullptr);
+        20, 35, 780, 160, hwnd_, nullptr, hi, nullptr);
 
-    // Add device controls
-    CreateWindowEx(0, L"STATIC", L"ID:", WS_CHILD | WS_VISIBLE,
-        10, 130, 20, 20, hwnd_, nullptr, GetModuleHandle(nullptr), nullptr);
+    // Device input row
+    auto lbl = [&](int x, int y, int w, int h, const wchar_t* text) {
+        CreateWindowEx(0, L"STATIC", text, WS_CHILD | WS_VISIBLE,
+            x, y, w, h, hwnd_, nullptr, hi, nullptr);
+    };
+    lbl(20, 210, 70, 20, L"Device ID:");
     edit_device_id_ = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE, 35, 128, 120, 22, hwnd_, (HMENU)IDC_DEVICE_ID,
-        GetModuleHandle(nullptr), nullptr);
-    CreateWindowEx(0, L"STATIC", L"Name:", WS_CHILD | WS_VISIBLE,
-        165, 130, 35, 20, hwnd_, nullptr, GetModuleHandle(nullptr), nullptr);
+        WS_CHILD | WS_VISIBLE, 95, 208, 150, 24, hwnd_, (HMENU)IDC_DEVICE_ID, hi, nullptr);
+    lbl(255, 210, 100, 20, L"Display Name:");
     edit_display_name_ = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE, 205, 128, 80, 22, hwnd_, (HMENU)IDC_DISP_NAME,
-        GetModuleHandle(nullptr), nullptr);
-    btn_add_device_ = CreateWindowEx(0, L"BUTTON", L"Add", WS_CHILD | WS_VISIBLE,
-        295, 126, 45, 26, hwnd_, (HMENU)IDC_ADD_DEVICE, GetModuleHandle(nullptr), nullptr);
-    CreateWindowEx(0, L"BUTTON", L"Del", WS_CHILD | WS_VISIBLE,
-        345, 126, 40, 26, hwnd_, (HMENU)IDC_DEL_DEVICE, GetModuleHandle(nullptr), nullptr);
+        WS_CHILD | WS_VISIBLE, 360, 208, 200, 24, hwnd_, (HMENU)IDC_DISP_NAME, hi, nullptr);
+    btn_add_device_ = CreateWindowEx(0, L"BUTTON", L"Add Device",
+        WS_CHILD | WS_VISIBLE, 590, 206, 100, 28, hwnd_, (HMENU)IDC_ADD_DEVICE, hi, nullptr);
+    CreateWindowEx(0, L"BUTTON", L"Delete",
+        WS_CHILD | WS_VISIBLE, 700, 206, 100, 28, hwnd_, (HMENU)IDC_DEL_DEVICE, hi, nullptr);
 
-    // Mappings section
-    CreateWindowEx(0, L"STATIC", L"Mappings",
-        WS_CHILD | WS_VISIBLE, 10, 160, 300, 16, hwnd_, nullptr, GetModuleHandle(nullptr), nullptr);
+    // ---- Mappings group ----
+    CreateWindowEx(0, L"BUTTON", L"Port Mappings", BS_GROUPBOX | WS_CHILD | WS_VISIBLE,
+        10, 295, 800, 270, hwnd_, nullptr, hi, nullptr);
     list_mappings_ = CreateWindowEx(0, L"LISTBOX", nullptr,
         WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL,
-        10, 178, 300, 40, hwnd_, nullptr, GetModuleHandle(nullptr), nullptr);
+        20, 320, 780, 100, hwnd_, nullptr, hi, nullptr);
 
-    // Mapping add controls (compact row).
+    // Mapping input row 1
+    lbl(20, 430, 60, 20, L"Name:");
     edit_map_name_ = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE, 10, 222, 70, 22, hwnd_, (HMENU)IDC_MAP_NAME,
-        GetModuleHandle(nullptr), nullptr);
+        WS_CHILD | WS_VISIBLE, 85, 428, 140, 24, hwnd_, (HMENU)IDC_MAP_NAME, hi, nullptr);
+    lbl(235, 430, 60, 20, L"Device:");
     edit_map_device_ = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE, 85, 222, 60, 22, hwnd_, (HMENU)IDC_MAP_DEVICE,
-        GetModuleHandle(nullptr), nullptr);
-    edit_map_target_ = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE, 150, 222, 70, 22, hwnd_, (HMENU)IDC_MAP_TARGET,
-        GetModuleHandle(nullptr), nullptr);
+        WS_CHILD | WS_VISIBLE, 300, 428, 130, 24, hwnd_, (HMENU)IDC_MAP_DEVICE, hi, nullptr);
+
+    // Mapping input row 2
+    lbl(20, 465, 80, 20, L"Target Host:");
+    edit_map_target_ = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", L"127.0.0.1",
+        WS_CHILD | WS_VISIBLE, 105, 463, 150, 24, hwnd_, (HMENU)IDC_MAP_TARGET, hi, nullptr);
+    lbl(265, 465, 80, 20, L"Target Port:");
     edit_map_port_ = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE, 225, 222, 40, 22, hwnd_, (HMENU)IDC_MAP_LPORT,
-        GetModuleHandle(nullptr), nullptr);
+        WS_CHILD | WS_VISIBLE, 350, 463, 60, 24, hwnd_, (HMENU)IDC_MAP_LPORT, hi, nullptr);
+    lbl(420, 465, 80, 20, L"Local Port:");
     edit_map_local_port_ = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE, 270, 222, 35, 22, hwnd_, nullptr,
-        GetModuleHandle(nullptr), nullptr);
-    btn_add_mapping_ = CreateWindowEx(0, L"BUTTON", L"+Map", WS_CHILD | WS_VISIBLE,
-        310, 220, 50, 26, hwnd_, (HMENU)IDC_ADD_MAPPING, GetModuleHandle(nullptr), nullptr);
-    CreateWindowEx(0, L"BUTTON", L"Del", WS_CHILD | WS_VISIBLE,
-        365, 220, 40, 26, hwnd_, (HMENU)IDC_DEL_MAPPING, GetModuleHandle(nullptr), nullptr);
+        WS_CHILD | WS_VISIBLE, 505, 463, 60, 24, hwnd_, nullptr, hi, nullptr);
+    btn_add_mapping_ = CreateWindowEx(0, L"BUTTON", L"Add Mapping",
+        WS_CHILD | WS_VISIBLE, 590, 461, 100, 28, hwnd_, (HMENU)IDC_ADD_MAPPING, hi, nullptr);
+    CreateWindowEx(0, L"BUTTON", L"Delete",
+        WS_CHILD | WS_VISIBLE, 700, 461, 100, 28, hwnd_, (HMENU)IDC_DEL_MAPPING, hi, nullptr);
 
-    SetWindowText(edit_map_name_, L"name");
-    SetWindowText(edit_map_device_, L"device");
-    SetWindowText(edit_map_target_, L"host:port");
-    SetWindowText(edit_map_port_, L"lport");
-    SetWindowText(edit_map_local_port_, L"tport");
-
-    // Status bar
-    status_bar_ = CreateWindowEx(0, L"STATIC", L"Ready",
-        WS_CHILD | WS_VISIBLE, 10, 268, 600, 20, hwnd_, nullptr,
-        GetModuleHandle(nullptr), nullptr);
+    // ---- Status bar ----
+    status_bar_ = CreateWindowEx(0, L"STATIC", L"Listening on :4433",
+        WS_CHILD | WS_VISIBLE | SS_SUNKEN, 10, 580, 800, 24, hwnd_, nullptr, hi, nullptr);
 
     SetTimer(hwnd_, kTimerId, 100, nullptr);
 
@@ -175,7 +171,6 @@ void MainWindow::on_create() {
     acceptor_->start("0.0.0.0", 4433);
     devices_->start_cleanup_timer();
     io_thread_ = std::thread([this] { io_->run(); });
-    SetWindowText(status_bar_, L"Listening on :4433");
 }
 
 void MainWindow::on_timer() { process_events(); }
@@ -303,8 +298,9 @@ void MainWindow::on_add_mapping() {
 void MainWindow::process_events() { events_.process(); }
 
 void MainWindow::add_device_to_list(const std::string& device_id, const std::string& address) {
-    auto w = std::wstring(device_id.begin(), device_id.end()) +
-             L"  [" + std::wstring(address.begin(), address.end()) + L"]";
+    auto w = L"● " + std::wstring(device_id.begin(), device_id.end()) +
+             L"    " + std::wstring(address.begin(), address.end()) +
+             L"    [ONLINE]";
     int idx = SendMessage(list_devices_, LB_ADDSTRING, 0, (LPARAM)w.c_str());
     device_index_[device_id] = idx;
 }
