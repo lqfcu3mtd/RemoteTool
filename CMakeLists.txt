@@ -156,6 +156,29 @@ target_link_libraries(config_loader_test PRIVATE rmt_core)
 add_test(NAME config_loader_test COMMAND config_loader_test)
 
 # --- 应用程序（Phase 4 GUI）---
+# When building with MinGW, the resulting .exe depends on the GCC runtime
+# DLLs (libgcc_s_seh-1, libstdc++-6, libwinpthread-1). On Windows the loader
+# looks in the .exe's directory first, so copy them next to the binary
+# as a post-build step. Detect the MinGW bin dir from the compiler path.
+if(MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    get_filename_component(_mingw_bin_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    set(_mingw_runtime_dlls
+        "${_mingw_bin_dir}/libgcc_s_seh-1.dll"
+        "${_mingw_bin_dir}/libstdc++-6.dll"
+        "${_mingw_bin_dir}/libwinpthread-1.dll")
+endif()
+
+function(cbmk_copy_mingw_runtime target)
+    if(NOT MINGW)
+        return()
+    endif()
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${_mingw_runtime_dlls}
+            $<TARGET_FILE_DIR:${target}>
+        COMMENT "Copying MinGW runtime DLLs next to ${target}.exe")
+endfunction()
+
 add_executable(remote_tool WIN32
     apps/remote_tool/main.cpp
     apps/remote_tool/gui/main_window.cpp
@@ -166,9 +189,11 @@ target_include_directories(remote_tool PRIVATE
     ${CMAKE_SOURCE_DIR}/apps/remote_tool
 )
 target_link_libraries(remote_tool PRIVATE rmt_core comctl32)
+cbmk_copy_mingw_runtime(remote_tool)
 
 add_executable(agent_windows WIN32
     apps/agent_windows/main.cpp
     apps/agent_windows/gui/agent_window.cpp
 )
 target_link_libraries(agent_windows PRIVATE rmt_core comctl32)
+cbmk_copy_mingw_runtime(agent_windows)
