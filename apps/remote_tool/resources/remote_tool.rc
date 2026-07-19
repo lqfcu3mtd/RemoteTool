@@ -4,6 +4,9 @@
 
 IDI_APPICON ICON "app.ico"
 
+// comctl32 v6 visual styles + system DPI awareness (see remote_tool.manifest).
+1 24 "remote_tool.manifest"
+
 IDR_MAINMENU MENU
 BEGIN
     POPUP "&File"

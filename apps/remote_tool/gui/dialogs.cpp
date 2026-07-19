@@ -14,6 +14,7 @@
 
 #include "dialogs.h"
 #include "resources/resource.h"
+#include "theme.h"
 
 #include <algorithm>
 #include <cstring>
@@ -69,10 +70,13 @@ struct DeviceDlgContext {
 static INT_PTR CALLBACK DeviceDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto* ctx = reinterpret_cast<DeviceDlgContext*>(
         GetWindowLongPtr(hwnd, DWLP_USER));
+    INT_PTR themed = 0;
+    if (theme::handle_dialog_message(hwnd, msg, wp, lp, &themed)) return themed;
     switch (msg) {
         case WM_INITDIALOG: {
             ctx = reinterpret_cast<DeviceDlgContext*>(lp);
             SetWindowLongPtr(hwnd, DWLP_USER, reinterpret_cast<LONG_PTR>(ctx));
+            theme::style_dialog(hwnd);
             if (ctx->is_edit) {
                 set_edit_text(hwnd, IDC_DD_ID, ctx->result->device_id);
                 set_edit_text(hwnd, IDC_DD_NAME, ctx->result->display_name);
@@ -161,10 +165,13 @@ void populate_device_dropdown(HWND hwnd, int combo_id,
 static INT_PTR CALLBACK MappingDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto* ctx = reinterpret_cast<MappingDlgContext*>(
         GetWindowLongPtr(hwnd, DWLP_USER));
+    INT_PTR themed = 0;
+    if (theme::handle_dialog_message(hwnd, msg, wp, lp, &themed)) return themed;
     switch (msg) {
         case WM_INITDIALOG: {
             ctx = reinterpret_cast<MappingDlgContext*>(lp);
             SetWindowLongPtr(hwnd, DWLP_USER, reinterpret_cast<LONG_PTR>(ctx));
+            theme::style_dialog(hwnd);
             set_edit_text(hwnd, IDC_MD_NAME, ctx->result->name);
             if (ctx->result->local_port > 0) {
                 set_edit_text(hwnd, IDC_MD_LPORT,
@@ -260,10 +267,13 @@ struct SettingsDlgContext {
 static INT_PTR CALLBACK SettingsDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto* ctx = reinterpret_cast<SettingsDlgContext*>(
         GetWindowLongPtr(hwnd, DWLP_USER));
+    INT_PTR themed = 0;
+    if (theme::handle_dialog_message(hwnd, msg, wp, lp, &themed)) return themed;
     switch (msg) {
         case WM_INITDIALOG: {
             ctx = reinterpret_cast<SettingsDlgContext*>(lp);
             SetWindowLongPtr(hwnd, DWLP_USER, reinterpret_cast<LONG_PTR>(ctx));
+            theme::style_dialog(hwnd);
             set_edit_text(hwnd, IDC_ST_BIND_HOST, ctx->cfg->bind_host);
             set_edit_text(hwnd, IDC_ST_AGENT_PORT,
                           std::to_string(ctx->cfg->agent_port));

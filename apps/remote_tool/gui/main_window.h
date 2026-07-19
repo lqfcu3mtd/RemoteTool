@@ -1,11 +1,13 @@
 #pragma once
-// Win32 main window for RemoteTool.
+// Win32 main window for RemoteTool — dark-themed.
 //
-// Layout: top toolbar (listen status + summary + Settings), left devices
-// panel (ListView 6 cols + pair code panel), right mappings panel (ListView
-// 6 cols + active sessions panel), bottom status bar (4 parts).
-// Add/Edit go through modal dialogs (dialogs.cpp). The window is resizable;
-// controls are re-laid out on WM_SIZE and a minimum size is enforced.
+// Layout: header band (title + summary + Settings), left "Devices" card
+// (ListView 6 cols + pair-code sub-card), right "Port mappings" card
+// (ListView 6 cols + active-sessions sub-card), bottom status band.
+// Cards/bands are painted in WM_PAINT (double-buffered); the look comes from
+// the shared dark theme (apps/shared/theme). Add/Edit go through modal
+// dialogs (dialogs.cpp). The window is resizable; controls are re-laid out on
+// WM_SIZE and a minimum size is enforced.
 //
 // Threading: the GUI thread never touches sockets. Network callbacks run on
 // the io_context thread and post closures to EventQueue, which the GUI
@@ -143,6 +145,10 @@ private:
     void create_fonts();
     void apply_fonts();
     void set_last_event(const std::wstring& text);
+    // Paint the themed background (bands + cards), double-buffered.
+    void paint(HDC hdc, RECT client);
+    static void paint_tramp(HDC hdc, RECT client, void* ctx);
+    LRESULT handle_ctl_color_static(HDC hdc, HWND control);
 
     // Lookups.
     int find_device_row(const std::string& device_id) const;
@@ -170,15 +176,14 @@ private:
     // Main window.
     HWND hwnd_ = nullptr;
 
-    // Top toolbar.
-    HWND toolbar_status_ = nullptr;     // "Listening on 0.0.0.0:4433" label
-    HWND toolbar_summary_ = nullptr;    // "N online · M running · K sessions"
+    // Header band.
+    HWND static_title_ = nullptr;       // "RemoteTool"
+    HWND static_subtitle_ = nullptr;    // "Reverse tunnel server"
+    HWND toolbar_summary_ = nullptr;    // "N online · M running"
     HWND toolbar_settings_ = nullptr;   // Settings button
 
-    // Left panel (Devices).
-    HWND panel_devices_ = nullptr;      // outer group box
+    // Left card (Devices).
     HWND list_devices_ = nullptr;       // SysListView32
-    HWND panel_pair_code_ = nullptr;    // inner group box
     HWND static_pair_label_ = nullptr;
     HWND static_pair_code_ = nullptr;
     HWND static_pair_expires_ = nullptr;
@@ -189,10 +194,8 @@ private:
     HWND btn_dev_edit_ = nullptr;
     HWND btn_dev_delete_ = nullptr;
 
-    // Right panel (Mappings).
-    HWND panel_mappings_ = nullptr;
+    // Right card (Mappings).
     HWND list_mappings_ = nullptr;
-    HWND panel_sessions_ = nullptr;
     HWND static_sessions_label_ = nullptr;
     HWND static_sessions_body_ = nullptr;
     HWND btn_map_filter_clear_ = nullptr;  // "Show all" — clears the device filter
@@ -203,12 +206,21 @@ private:
     HWND btn_map_stop_ = nullptr;
     HWND btn_map_delete_ = nullptr;
 
-    // Bottom status bar.
-    HWND status_bar_ = nullptr;
+    // Bottom status band.
+    HWND status_left_ = nullptr;    // last notable event
+    HWND status_right_ = nullptr;   // listen address + counters
+
+    // Card rects computed by layout_controls, painted by paint().
+    RECT rc_devices_card_ = {};
+    RECT rc_pair_card_ = {};
+    RECT rc_mappings_card_ = {};
+    RECT rc_sessions_card_ = {};
 
     // GDI resources (created in on_create, destroyed in on_destroy).
-    HFONT font_ui_ = nullptr;    // UI font, 9pt
-    HFONT font_code_ = nullptr;  // pair-code display font (monospace, bold)
+    HFONT font_ui_ = nullptr;       // UI font, 9pt
+    HFONT font_title_ = nullptr;    // header title, 12pt bold
+    HFONT font_caption_ = nullptr;  // card captions, 9pt semibold
+    HFONT font_code_ = nullptr;     // pair-code display font (monospace, bold)
 
     // Backend.
     std::unique_ptr<asio::io_context> io_;
@@ -236,7 +248,7 @@ private:
     int selected_mapping_idx_ = -1;
     std::string filter_device_id_;  // empty = show all mappings
 
-    // Status bar middle part: last notable event.
+    // Status band left part: last notable event.
     std::wstring last_event_ = L"Ready";
 
     // GUI-thread snapshot of the global active session count (updated by

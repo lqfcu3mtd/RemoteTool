@@ -4,6 +4,9 @@
 
 IDI_APPICON ICON "app.ico"
 
+// comctl32 v6 visual styles + system DPI awareness (see agent.manifest).
+1 24 "agent.manifest"
+
 IDD_AGENT_SETTINGS DIALOGEX 0, 0, 320, 160
 CAPTION "Agent settings"
 FONT 9, "Segoe UI"

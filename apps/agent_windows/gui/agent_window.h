@@ -1,12 +1,16 @@
 #pragma once
-// Windows Agent GUI — minimal status window.
+// Windows Agent GUI — dark-themed status window.
 //
 // Reads / writes agent.json (Device ID, Server host, Server port). Shows:
-//   - Large colored connection state (Connecting / Online / Offline / Auth)
-//   - Device ID, Server, reconnect attempt count
-//   - Read-only event log (recent state transitions, newest last)
+//   - Header band with app title
+//   - Status card: large colored state (Connecting / Online / Offline / Auth)
+//   - Info card: Device ID, Server, reconnect count / active sessions
+//   - Read-only event log on a dark card (recent state transitions)
 //   - Settings dialog: edit Device ID / Server host/port (writes agent.json)
 //   - Reconnect button: tears down and re-creates the connection
+//
+// Look & feel: shared dark theme (apps/shared/theme). Cards are painted in
+// WM_PAINT (double-buffered); buttons are flat owner-drawn.
 //
 // Threading: AgentConnection callbacks run on the io_context thread and only
 // PostMessage to the GUI thread; all control updates happen on the GUI thread.
@@ -61,6 +65,11 @@ private:
     void update_labels();
     void on_timer();
 
+    // Paint the themed background (bands + cards), double-buffered.
+    void paint(HDC hdc, RECT client);
+    static void paint_tramp(HDC hdc, RECT client, void* ctx);
+    LRESULT handle_ctl_color_static(HDC hdc, HWND control);
+
     // Build the target whitelist from cfg_.target_policy. On invalid policy
     // the user gets a warning and a deny-all whitelist is used (fail closed).
     void rebuild_whitelist();
@@ -76,7 +85,11 @@ private:
 
     HWND hwnd_ = nullptr;
     HWND static_title_ = nullptr;
+    HWND static_subtitle_ = nullptr;
     HWND lbl_state_big_ = nullptr;   // large colored state text
+    HWND cap_device_ = nullptr;      // dim captions on the info card
+    HWND cap_server_ = nullptr;
+    HWND cap_activity_ = nullptr;
     HWND lbl_device_ = nullptr;
     HWND lbl_server_ = nullptr;
     HWND lbl_attempts_ = nullptr;
@@ -89,7 +102,13 @@ private:
 
     HFONT font_ui_ = nullptr;
     HFONT font_title_ = nullptr;
+    HFONT font_subtitle_ = nullptr;
     HFONT font_state_ = nullptr;
+
+    // Card rects computed by layout_controls, painted by paint().
+    RECT rc_status_card_ = {};
+    RECT rc_info_card_ = {};
+    RECT rc_log_card_ = {};
 
     config::AgentConfigFile cfg_;
     std::unique_ptr<asio::io_context> io_;

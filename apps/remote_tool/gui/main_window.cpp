@@ -11,6 +11,7 @@
 #include "main_window.h"
 #include "dialogs.h"
 #include "resources/resource.h"
+#include "theme.h"
 
 #include <algorithm>
 #include <random>
@@ -20,7 +21,6 @@ namespace rmt::gui {
 
 namespace {
     // ============ Control IDs for the main window controls ============
-    constexpr int IDC_TOOLBAR_STATUS   = 301;
     constexpr int IDC_TOOLBAR_SUMMARY  = 302;
     constexpr int IDC_TOOLBAR_SETTINGS = 303;
 
@@ -49,20 +49,21 @@ namespace {
     constexpr int IDC_MAP_FILTER_CLEAR = 355;
     constexpr int IDC_MAP_FILTER_LABEL = 356;
 
-    constexpr int IDC_STATUS_BAR       = 360;
+    constexpr int IDC_STATUS_LEFT      = 360;
+    constexpr int IDC_STATUS_RIGHT     = 361;
 
-    // ============ Layout dimensions (pixels) ============
+    // ============ Layout dimensions (logical px @96 DPI, scaled at runtime)
     constexpr int kWindowW   = 1060;
-    constexpr int kWindowH   = 660;
+    constexpr int kWindowH   = 680;
     constexpr int kMinW      = 940;
     constexpr int kMinH      = 600;
-    constexpr int kToolbarH  = 40;
-    constexpr int kStatusH   = 24;
-    constexpr int kLeftW     = 430;
-    constexpr int kPanelPad  = 8;
-    constexpr int kPairH     = 132;
-    constexpr int kSessH     = 120;
-    constexpr int kBtnRowH   = 34;
+    constexpr int kBandH     = 48;   // header band
+    constexpr int kStatusH   = 26;   // bottom status band
+    constexpr int kLeftW     = 440;
+    constexpr int kPanelPad  = 10;
+    constexpr int kPairH     = 128;
+    constexpr int kSessH     = 116;
+    constexpr int kBtnRowH   = 36;
 
     constexpr wchar_t kAppTitle[] = L"RemoteTool v0.1.0 — Reverse Tunnel Server";
 
@@ -162,12 +163,14 @@ int MainWindow::run() {
     INITCOMMONCONTROLSEX icc = {sizeof(icc), ICC_LISTVIEW_CLASSES | ICC_BAR_CLASSES};
     InitCommonControlsEx(&icc);
 
+    theme::init();
+
     WNDCLASSEX wc = {};
     wc.cbSize = sizeof(WNDCLASSEX);
     wc.lpfnWndProc = WndProc;
     wc.hInstance = GetModuleHandle(nullptr);
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
+    wc.hbrBackground = theme::bg_brush();
     wc.lpszClassName = L"RemoteToolMain";
     wc.hIcon = LoadIcon(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_APPICON));
     if (!wc.hIcon) wc.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
@@ -176,13 +179,17 @@ int MainWindow::run() {
     HMENU menu_bar = LoadMenu(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDR_MAINMENU));
 
     hwnd_ = CreateWindowEx(0, L"RemoteToolMain", kAppTitle,
-                           WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                           CW_USEDEFAULT, CW_USEDEFAULT, kWindowW, kWindowH,
+                           WS_OVERLAPPEDWINDOW | WS_VISIBLE | WS_CLIPCHILDREN,
+                           CW_USEDEFAULT, CW_USEDEFAULT,
+                           theme::px(kWindowW), theme::px(kWindowH),
                            nullptr, menu_bar, GetModuleHandle(nullptr), this);
     if (!hwnd_) return 1;
 
+    theme::enable_dark_frame(hwnd_);
+
     MSG msg;
     while (GetMessage(&msg, nullptr, 0, 0)) { TranslateMessage(&msg); DispatchMessage(&msg); }
+    theme::shutdown();
     return static_cast<int>(msg.wParam);
 }
 
@@ -204,10 +211,19 @@ LRESULT MainWindow::handle_message(UINT msg, WPARAM wp, LPARAM lp) {
         case WM_CREATE:     on_create(); break;
         case WM_TIMER:      on_timer();  break;
         case WM_SIZE:       on_size();   break;
+        case WM_ERASEBKGND: return 1;  // background painted in WM_PAINT
+        case WM_PAINT:
+            theme::buffered_paint(hwnd_, &MainWindow::paint_tramp, this);
+            break;
+        case WM_DRAWITEM:
+            if (theme::draw_button(reinterpret_cast<DRAWITEMSTRUCT*>(lp))) {
+                return TRUE;
+            }
+            break;
         case WM_GETMINMAXINFO: {
             auto* mmi = reinterpret_cast<MINMAXINFO*>(lp);
-            mmi->ptMinTrackSize.x = kMinW;
-            mmi->ptMinTrackSize.y = kMinH;
+            mmi->ptMinTrackSize.x = theme::px(kMinW);
+            mmi->ptMinTrackSize.y = theme::px(kMinH);
             break;
         }
         case WM_COMMAND: {
@@ -258,6 +274,9 @@ LRESULT MainWindow::handle_message(UINT msg, WPARAM wp, LPARAM lp) {
             break;
         }
         case WM_NOTIFY:     on_notify(reinterpret_cast<NMHDR*>(lp)); break;
+        case WM_CTLCOLORSTATIC:
+            return handle_ctl_color_static(reinterpret_cast<HDC>(wp),
+                                           reinterpret_cast<HWND>(lp));
         case WM_CLOSE:      on_close(); DestroyWindow(hwnd_); break;
         case WM_DESTROY:    on_destroy(); PostQuitMessage(0); break;
         default: return DefWindowProc(hwnd_, msg, wp, lp);
@@ -265,42 +284,35 @@ LRESULT MainWindow::handle_message(UINT msg, WPARAM wp, LPARAM lp) {
     return 0;
 }
 
-// ============ Fonts / layout ============
+// ============ Fonts / layout / painting ============
 
 void MainWindow::create_fonts() {
-    HDC screen = GetDC(nullptr);
-    int dpi = screen ? GetDeviceCaps(screen, LOGPIXELSY) : 96;
-    if (screen) ReleaseDC(nullptr, screen);
-
-    LOGFONT lf = {};
-    lf.lfHeight = -MulDiv(9, dpi, 96);
-    lf.lfQuality = CLEARTYPE_QUALITY;
-    lf.lfCharSet = DEFAULT_CHARSET;
-    wcscpy_s(lf.lfFaceName, L"Segoe UI");
-    font_ui_ = CreateFontIndirect(&lf);
-
-    lf.lfHeight = -MulDiv(18, dpi, 96);
-    lf.lfWeight = FW_BOLD;
-    wcscpy_s(lf.lfFaceName, L"Consolas");
-    font_code_ = CreateFontIndirect(&lf);
+    font_ui_      = theme::make_font(9, FW_NORMAL);
+    font_title_   = theme::make_font(12, FW_BOLD);
+    font_caption_ = theme::make_font(9, FW_SEMIBOLD);
+    font_code_    = theme::make_font(18, FW_BOLD, L"Consolas");
 }
 
 void MainWindow::apply_fonts() {
     if (!font_ui_) return;
     const HWND all[] = {
-        toolbar_status_, toolbar_summary_, toolbar_settings_,
-        panel_devices_, list_devices_, panel_pair_code_,
+        toolbar_summary_, toolbar_settings_,
+        list_devices_,
         static_pair_label_, static_pair_expires_,
         btn_pair_copy_, btn_pair_regen_, btn_pair_revoke_,
         btn_dev_add_, btn_dev_edit_, btn_dev_delete_,
-        panel_mappings_, list_mappings_, panel_sessions_,
+        list_mappings_,
         static_sessions_label_, static_sessions_body_,
         btn_map_filter_clear_, static_map_filter_,
         btn_map_add_, btn_map_edit_, btn_map_start_, btn_map_stop_,
-        btn_map_delete_, status_bar_,
+        btn_map_delete_, status_left_, status_right_,
     };
     for (HWND h : all) {
         if (h) SendMessage(h, WM_SETFONT, reinterpret_cast<WPARAM>(font_ui_), TRUE);
+    }
+    if (font_title_ && static_title_) {
+        SendMessage(static_title_, WM_SETFONT,
+                    reinterpret_cast<WPARAM>(font_title_), TRUE);
     }
     if (font_code_ && static_pair_code_) {
         SendMessage(static_pair_code_, WM_SETFONT,
@@ -309,70 +321,160 @@ void MainWindow::apply_fonts() {
 }
 
 void MainWindow::layout_controls(int W, int H) {
+    auto S = [](int v) { return theme::px(v); };
     auto place = [](HWND h, int x, int y, int w, int ht) {
         if (h) MoveWindow(h, x, y, w, ht, TRUE);
     };
-    const int panels_y = kToolbarH + 4;
-    const int panels_h = clamp_min(H - kStatusH - panels_y - kPanelPad, 200);
+    const int pad = S(kPanelPad);
+    const int band_h = S(kBandH);
+    const int status_h = S(kStatusH);
+    const int btn_row_h = S(kBtnRowH);
+    const int cards_y = band_h + pad;
+    const int cards_h = clamp_min(H - status_h - cards_y - pad, 200);
 
-    // ---- Toolbar ----
-    place(toolbar_status_,  12, 10, 320, 20);
-    place(toolbar_settings_, W - 100, 8, 88, 24);
-    place(toolbar_summary_, W - 100 - 8 - 280, 10, 280, 20);
+    // ---- Header band ----
+    place(static_title_,    S(14), S(8),  S(220), S(18));
+    place(static_subtitle_, S(14), S(26), S(420), S(14));
+    place(toolbar_settings_, W - S(14) - S(96), S(10), S(96), S(28));
+    place(toolbar_summary_,  W - S(14) - S(96) - S(8) - S(260), S(14), S(260), S(16));
 
-    // ---- Left panel: Devices ----
-    const int lx = kPanelPad;
-    const int lw = kLeftW;
-    const int ly = panels_y;
-    const int lh = panels_h;
+    // ---- Left card: Devices ----
+    const int lx = pad;
+    const int lw = S(kLeftW);
+    const int card_pad = S(12);
+    rc_devices_card_ = {lx, cards_y, lx + lw, cards_y + cards_h};
 
-    place(panel_devices_, lx, ly, lw, lh);
+    const int btn_y  = cards_y + cards_h - card_pad - (btn_row_h - S(6));
+    const int pair_h = S(kPairH);
+    const int pair_y = btn_y - S(8) - pair_h;
+    const int list_y = cards_y + S(32);  // below the painted card caption
+    const int list_h = clamp_min(pair_y - S(8) - list_y, 60);
 
-    const int btn_y   = ly + lh - kBtnRowH;
-    const int pair_y  = btn_y - 8 - kPairH;
-    const int list_h  = clamp_min(pair_y - 8 - (ly + 20), 60);
+    place(list_devices_, lx + card_pad, list_y, lw - 2 * card_pad, list_h);
 
-    place(list_devices_, lx + 10, ly + 20, lw - 20, list_h);
-    place(panel_pair_code_, lx + 10, pair_y, lw - 20, kPairH);
-    place(static_pair_label_,   lx + 20, pair_y + 16, lw - 40, 16);
-    place(static_pair_code_,    lx + 20, pair_y + 36, lw - 40, 34);
-    place(static_pair_expires_, lx + 20, pair_y + 76, lw - 40, 16);
-    place(btn_pair_copy_,   lx + 20,  pair_y + 98, 60, 26);
-    place(btn_pair_regen_,  lx + 84,  pair_y + 98, 84, 26);
-    place(btn_pair_revoke_, lx + 172, pair_y + 98, 70, 26);
+    rc_pair_card_ = {lx + card_pad, pair_y,
+                     lx + lw - card_pad, pair_y + pair_h};
+    place(static_pair_label_,   lx + card_pad + S(10), pair_y + S(8),  lw - 2 * card_pad - S(20), S(14));
+    place(static_pair_code_,    lx + card_pad + S(10), pair_y + S(26), lw - 2 * card_pad - S(20), S(32));
+    place(static_pair_expires_, lx + card_pad + S(10), pair_y + S(64), lw - 2 * card_pad - S(20), S(14));
+    place(btn_pair_copy_,   lx + card_pad + S(10),  pair_y + S(88), S(64), S(28));
+    place(btn_pair_regen_,  lx + card_pad + S(82),  pair_y + S(88), S(92), S(28));
+    place(btn_pair_revoke_, lx + card_pad + S(182), pair_y + S(88), S(76), S(28));
 
-    place(btn_dev_add_,    lx + 10,  btn_y + 2, 80, 26);
-    place(btn_dev_edit_,   lx + 98,  btn_y + 2, 80, 26);
-    place(btn_dev_delete_, lx + 186, btn_y + 2, 80, 26);
+    place(btn_dev_add_,    lx + card_pad,        btn_y, S(84), S(28));
+    place(btn_dev_edit_,   lx + card_pad + S(92),  btn_y, S(84), S(28));
+    place(btn_dev_delete_, lx + card_pad + S(184), btn_y, S(84), S(28));
 
-    // ---- Right panel: Mappings ----
-    const int rx = lx + lw + kPanelPad;
-    const int rw = clamp_min(W - rx - kPanelPad, 300);
+    // ---- Right card: Port mappings ----
+    const int rx = lx + lw + pad;
+    const int rw = clamp_min(W - rx - pad, 300);
+    rc_mappings_card_ = {rx, cards_y, rx + rw, cards_y + cards_h};
 
-    place(panel_mappings_, rx, ly, rw, lh);
-    place(static_map_filter_,   rx + 10, ly + 4, rw - 120, 18);
-    place(btn_map_filter_clear_, rx + rw - 100, ly + 2, 90, 20);
+    place(static_map_filter_,    rx + card_pad, cards_y + S(34), rw - 2 * card_pad - S(100), S(16));
+    place(btn_map_filter_clear_, rx + rw - card_pad - S(88), cards_y + S(30), S(88), S(24));
 
-    const int mbtn_y  = ly + lh - kBtnRowH;
-    const int sess_y  = mbtn_y - 8 - kSessH;
-    const int mlist_h = clamp_min(sess_y - 8 - (ly + 24), 60);
+    const int mbtn_y  = cards_y + cards_h - card_pad - (btn_row_h - S(6));
+    const int sess_h  = S(kSessH);
+    const int sess_y  = mbtn_y - S(8) - sess_h;
+    const int mlist_y = cards_y + S(60);
+    const int mlist_h = clamp_min(sess_y - S(8) - mlist_y, 60);
 
-    place(list_mappings_, rx + 10, ly + 24, rw - 20, mlist_h);
-    place(panel_sessions_, rx + 10, sess_y, rw - 20, kSessH);
-    place(static_sessions_label_, rx + 20, sess_y + 16, rw - 40, 16);
-    place(static_sessions_body_,  rx + 20, sess_y + 36, rw - 40, kSessH - 48);
+    place(list_mappings_, rx + card_pad, mlist_y, rw - 2 * card_pad, mlist_h);
 
-    int bx = rx + 10;
+    rc_sessions_card_ = {rx + card_pad, sess_y,
+                         rx + rw - card_pad, sess_y + sess_h};
+    place(static_sessions_label_, rx + card_pad + S(10), sess_y + S(8),  rw - 2 * card_pad - S(20), S(14));
+    place(static_sessions_body_,  rx + card_pad + S(10), sess_y + S(26), rw - 2 * card_pad - S(20), sess_h - S(36));
+
+    int bx = rx + card_pad;
     for (HWND b : {btn_map_add_, btn_map_edit_, btn_map_start_,
                    btn_map_stop_, btn_map_delete_}) {
-        place(b, bx, mbtn_y + 2, 72, 26);
-        bx += 80;
+        place(b, bx, mbtn_y, S(76), S(28));
+        bx += S(84);
     }
 
-    // ---- Status bar ----
-    SendMessage(status_bar_, WM_SIZE, 0, 0);
-    const int parts[] = {150, W / 2, W - 300, -1};
-    SendMessage(status_bar_, SB_SETPARTS, 4, reinterpret_cast<LPARAM>(parts));
+    // ---- Status band ----
+    const int band_top = H - status_h;
+    place(status_left_,  S(14), band_top + S(5), W / 2 - S(20), S(16));
+    place(status_right_, W / 2, band_top + S(5), W / 2 - S(14), S(16));
+}
+
+void MainWindow::paint_tramp(HDC hdc, RECT client, void* ctx) {
+    static_cast<MainWindow*>(ctx)->paint(hdc, client);
+}
+
+void MainWindow::paint(HDC hdc, RECT client) {
+    FillRect(hdc, &client, theme::bg_brush());
+
+    const int band_h = theme::px(kBandH);
+    const int status_h = theme::px(kStatusH);
+    HBRUSH line_brush = CreateSolidBrush(theme::kBorder);
+
+    // Header band + separator line.
+    RECT band = {0, 0, client.right, band_h};
+    FillRect(hdc, &band, theme::band_brush());
+    RECT band_line = {0, band_h - 1, client.right, band_h};
+    FillRect(hdc, &band_line, line_brush);
+
+    // Status band + separator line.
+    RECT sband = {0, client.bottom - status_h, client.right, client.bottom};
+    FillRect(hdc, &sband, theme::band_brush());
+    RECT sband_line = {0, client.bottom - status_h, client.right,
+                       client.bottom - status_h + 1};
+    FillRect(hdc, &sband_line, line_brush);
+    DeleteObject(line_brush);
+
+    // Cards: outer surfaces + inset sub-cards.
+    const int r = theme::px(8);
+    theme::fill_round_rect(hdc, rc_devices_card_, theme::kCard, theme::kBorder, r);
+    theme::fill_round_rect(hdc, rc_mappings_card_, theme::kCard, theme::kBorder, r);
+    theme::fill_round_rect(hdc, rc_pair_card_, theme::kDeep, theme::kBorder, r);
+    theme::fill_round_rect(hdc, rc_sessions_card_, theme::kDeep, theme::kBorder, r);
+
+    // Card captions (painted text, semibold).
+    if (font_caption_) {
+        HGDIOBJ old_font = SelectObject(hdc, font_caption_);
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, theme::kTextDim);
+        RECT cap = {rc_devices_card_.left + theme::px(12),
+                    rc_devices_card_.top + theme::px(10),
+                    rc_devices_card_.right, rc_devices_card_.top + theme::px(26)};
+        DrawTextW(hdc, L"Devices", -1, &cap, DT_LEFT | DT_SINGLELINE);
+        cap.left = rc_mappings_card_.left + theme::px(12);
+        cap.top = rc_mappings_card_.top + theme::px(10);
+        cap.bottom = rc_mappings_card_.top + theme::px(26);
+        DrawTextW(hdc, L"Port mappings", -1, &cap, DT_LEFT | DT_SINGLELINE);
+        SelectObject(hdc, old_font);
+    }
+}
+
+LRESULT MainWindow::handle_ctl_color_static(HDC hdc, HWND control) {
+    auto finish = [hdc](COLORREF text, HBRUSH brush, COLORREF bk) {
+        SetTextColor(hdc, text);
+        SetBkColor(hdc, bk);
+        return reinterpret_cast<LRESULT>(brush);
+    };
+    // Header / status band statics.
+    if (control == static_title_) {
+        return finish(theme::kText, theme::band_brush(), theme::kBand);
+    }
+    if (control == static_subtitle_ || control == status_left_ ||
+        control == status_right_) {
+        return finish(theme::kTextDim, theme::band_brush(), theme::kBand);
+    }
+    if (control == toolbar_summary_) {
+        return finish(theme::kText, theme::band_brush(), theme::kBand);
+    }
+    // Sub-card (deep) statics; the read-only sessions body arrives here too.
+    if (control == static_pair_label_ || control == static_pair_expires_ ||
+        control == static_sessions_label_) {
+        return finish(theme::kTextDim, theme::deep_brush(), theme::kDeep);
+    }
+    if (control == static_pair_code_ || control == static_sessions_body_) {
+        return finish(theme::kText, theme::deep_brush(), theme::kDeep);
+    }
+    // Everything else sits directly on a card.
+    return finish(theme::kTextDim, theme::card_brush(), theme::kCard);
 }
 
 // ============ Create / destroy ============
@@ -382,12 +484,16 @@ void MainWindow::on_create() {
     RECT rc; GetClientRect(hwnd_, &rc);
     const int W = rc.right - rc.left;
 
-    // ---- Top toolbar ----
-    toolbar_status_ = CreateWindowEx(0, L"STATIC",
-        (L"Listening on " + widen(rt_config_.bind_host) + L":" +
+    // ---- Header band ----
+    static_title_ = CreateWindowEx(0, L"STATIC", L"RemoteTool",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 0, 0, 10, 10,
+        hwnd_, nullptr, hi, nullptr);
+    static_subtitle_ = CreateWindowEx(0, L"STATIC",
+        (L"Reverse tunnel server  ·  Listening on " +
+         widen(rt_config_.bind_host) + L":" +
          std::to_wstring(rt_config_.agent_port)).c_str(),
         WS_CHILD | WS_VISIBLE | SS_LEFT, 0, 0, 10, 10,
-        hwnd_, (HMENU)IDC_TOOLBAR_STATUS, hi, nullptr);
+        hwnd_, nullptr, hi, nullptr);
     toolbar_summary_ = CreateWindowEx(0, L"STATIC", L"0 online",
         WS_CHILD | WS_VISIBLE | SS_RIGHT, 0, 0, 10, 10,
         hwnd_, (HMENU)IDC_TOOLBAR_SUMMARY, hi, nullptr);
@@ -395,17 +501,18 @@ void MainWindow::on_create() {
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
         0, 0, 10, 10, hwnd_, (HMENU)IDC_TOOLBAR_SETTINGS, hi, nullptr);
 
-    // ---- Left panel: Devices ----
-    panel_devices_ = CreateWindowEx(0, L"BUTTON", L"Devices",
-        BS_GROUPBOX | WS_CHILD | WS_VISIBLE,
-        0, 0, 10, 10, hwnd_, nullptr, hi, nullptr);
-
+    // ---- Left card: Devices ----
     list_devices_ = CreateWindowEx(0, WC_LISTVIEW, L"",
         WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
         0, 0, 10, 10, hwnd_, (HMENU)IDC_LIST_DEVICES, hi, nullptr);
     ListView_SetExtendedListViewStyle(list_devices_,
-        LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER);
+        LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+    theme::enable_dark_scrollbars(list_devices_);
+    ListView_SetBkColor(list_devices_, theme::kDeep);
+    ListView_SetTextBkColor(list_devices_, theme::kDeep);
+    ListView_SetTextColor(list_devices_, theme::kText);
     {
+        auto S = [](int v) { return theme::px(v); };
         LVCOLUMN c = {};
         c.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
         const struct { int w; const wchar_t* t; } cols[] = {
@@ -413,16 +520,13 @@ void MainWindow::on_create() {
             {40,  L"Ver"},    {110, L"Address"}, {55, L"Last"},
         };
         for (int i = 0; i < 6; ++i) {
-            c.cx = cols[i].w;
+            c.cx = S(cols[i].w);
             c.pszText = const_cast<LPWSTR>(cols[i].t);
             c.iSubItem = i;
             ListView_InsertColumn(list_devices_, i, &c);
         }
     }
 
-    panel_pair_code_ = CreateWindowEx(0, L"BUTTON", L"Pair code",
-        BS_GROUPBOX | WS_CHILD | WS_VISIBLE,
-        0, 0, 10, 10, hwnd_, nullptr, hi, nullptr);
     static_pair_label_ = CreateWindowEx(0, L"STATIC", L"No device selected",
         WS_CHILD | WS_VISIBLE | SS_LEFT, 0, 0, 10, 10,
         hwnd_, (HMENU)IDC_PAIR_LABEL, hi, nullptr);
@@ -455,11 +559,7 @@ void MainWindow::on_create() {
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
         0, 0, 10, 10, hwnd_, (HMENU)IDC_DEV_DELETE, hi, nullptr);
 
-    // ---- Right panel: Mappings ----
-    panel_mappings_ = CreateWindowEx(0, L"BUTTON", L"Port mappings",
-        BS_GROUPBOX | WS_CHILD | WS_VISIBLE,
-        0, 0, 10, 10, hwnd_, nullptr, hi, nullptr);
-
+    // ---- Right card: Port mappings ----
     btn_map_filter_clear_ = CreateWindowEx(0, L"BUTTON", L"Show all",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
         0, 0, 10, 10, hwnd_, (HMENU)IDC_MAP_FILTER_CLEAR, hi, nullptr);
@@ -471,8 +571,13 @@ void MainWindow::on_create() {
         WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
         0, 0, 10, 10, hwnd_, (HMENU)IDC_LIST_MAPPINGS, hi, nullptr);
     ListView_SetExtendedListViewStyle(list_mappings_,
-        LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER);
+        LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+    theme::enable_dark_scrollbars(list_mappings_);
+    ListView_SetBkColor(list_mappings_, theme::kDeep);
+    ListView_SetTextBkColor(list_mappings_, theme::kDeep);
+    ListView_SetTextColor(list_mappings_, theme::kText);
     {
+        auto S = [](int v) { return theme::px(v); };
         LVCOLUMN c = {};
         c.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
         const struct { int w; const wchar_t* t; } cols[] = {
@@ -480,22 +585,20 @@ void MainWindow::on_create() {
             {60,  L"State"}, {45,  L"Conn"},   {90,  L"Device"},
         };
         for (int i = 0; i < 6; ++i) {
-            c.cx = cols[i].w;
+            c.cx = S(cols[i].w);
             c.pszText = const_cast<LPWSTR>(cols[i].t);
             c.iSubItem = i;
             ListView_InsertColumn(list_mappings_, i, &c);
         }
     }
 
-    panel_sessions_ = CreateWindowEx(0, L"BUTTON", L"Active sessions",
-        BS_GROUPBOX | WS_CHILD | WS_VISIBLE,
-        0, 0, 10, 10, hwnd_, nullptr, hi, nullptr);
     static_sessions_label_ = CreateWindowEx(0, L"STATIC", L"No mapping selected",
         WS_CHILD | WS_VISIBLE | SS_LEFT, 0, 0, 10, 10,
         hwnd_, (HMENU)IDC_SESS_LABEL, hi, nullptr);
     static_sessions_body_ = CreateWindowEx(0, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | ES_LEFT | ES_MULTILINE | ES_READONLY,
         0, 0, 10, 10, hwnd_, (HMENU)IDC_SESS_BODY, hi, nullptr);
+    theme::untheme(static_sessions_body_);
 
     btn_map_add_ = CreateWindowEx(0, L"BUTTON", L"+ Add",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
@@ -513,10 +616,28 @@ void MainWindow::on_create() {
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
         0, 0, 10, 10, hwnd_, (HMENU)IDC_MAP_DELETE, hi, nullptr);
 
-    // ---- Bottom status bar ----
-    status_bar_ = CreateWindowEx(0, STATUSCLASSNAME, L"",
-        WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP,
-        0, 0, 10, 10, hwnd_, (HMENU)IDC_STATUS_BAR, hi, nullptr);
+    // ---- Bottom status band ----
+    status_left_ = CreateWindowEx(0, L"STATIC", L"Ready",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 0, 0, 10, 10,
+        hwnd_, (HMENU)IDC_STATUS_LEFT, hi, nullptr);
+    status_right_ = CreateWindowEx(0, L"STATIC", L"",
+        WS_CHILD | WS_VISIBLE | SS_RIGHT, 0, 0, 10, 10,
+        hwnd_, (HMENU)IDC_STATUS_RIGHT, hi, nullptr);
+
+    // Flat dark buttons; primary actions get the accent color.
+    theme::make_flat_button(toolbar_settings_, true);
+    theme::make_flat_button(btn_dev_add_, true);
+    theme::make_flat_button(btn_dev_edit_);
+    theme::make_flat_button(btn_dev_delete_);
+    theme::make_flat_button(btn_pair_copy_);
+    theme::make_flat_button(btn_pair_regen_, true);
+    theme::make_flat_button(btn_pair_revoke_);
+    theme::make_flat_button(btn_map_add_, true);
+    theme::make_flat_button(btn_map_edit_);
+    theme::make_flat_button(btn_map_start_);
+    theme::make_flat_button(btn_map_stop_);
+    theme::make_flat_button(btn_map_delete_);
+    theme::make_flat_button(btn_map_filter_clear_);
 
     create_fonts();
     apply_fonts();
@@ -578,12 +699,14 @@ void MainWindow::on_create() {
 
 void MainWindow::on_destroy() {
     KillTimer(hwnd_, kTimerId);
-    if (font_ui_)   { DeleteObject(font_ui_);   font_ui_ = nullptr; }
-    if (font_code_) { DeleteObject(font_code_); font_code_ = nullptr; }
+    if (font_ui_)      { DeleteObject(font_ui_);      font_ui_ = nullptr; }
+    if (font_title_)   { DeleteObject(font_title_);   font_title_ = nullptr; }
+    if (font_caption_) { DeleteObject(font_caption_); font_caption_ = nullptr; }
+    if (font_code_)    { DeleteObject(font_code_);    font_code_ = nullptr; }
 }
 
 void MainWindow::on_size() {
-    if (!status_bar_) return;
+    if (!status_left_) return;
     RECT rc; GetClientRect(hwnd_, &rc);
     layout_controls(rc.right - rc.left, rc.bottom - rc.top);
 }
@@ -688,14 +811,14 @@ void MainWindow::on_notify(NMHDR* nm) {
             if (nm->idFrom == IDC_LIST_DEVICES &&
                 row >= 0 && row < static_cast<int>(device_rows_.size())) {
                 cd->clrText = device_rows_[row].online
-                    ? RGB(0x0f, 0x6e, 0x56)   // online green
-                    : RGB(0x88, 0x88, 0x88);  // offline gray
+                    ? theme::kOk        // online green
+                    : theme::kTextDim;  // offline gray
             } else if (nm->idFrom == IDC_LIST_MAPPINGS) {
                 int actual = displayed_to_actual_mapping(row);
                 if (actual >= 0) {
                     cd->clrText = mapping_rows_[actual].running
-                        ? RGB(0x0f, 0x6e, 0x56)
-                        : RGB(0x88, 0x88, 0x88);
+                        ? theme::kOk
+                        : theme::kTextDim;
                 }
             }
             SetWindowLongPtr(hwnd_, DWLP_MSGRESULT, CDRF_DODEFAULT);
@@ -889,23 +1012,21 @@ void MainWindow::set_last_event(const std::wstring& text) {
 }
 
 void MainWindow::update_status_bar() {
-    if (!status_bar_) return;
+    if (!status_left_) return;
     int online = 0;
     for (const auto& d : device_rows_) if (d.online) ++online;
     int running = 0;
     for (const auto& m : mapping_rows_) if (m.running) ++running;
     int conns = total_sessions_ui_;
 
-    std::wstring listen = L"Listening on " + widen(rt_config_.bind_host) +
-                          L":" + std::to_wstring(rt_config_.agent_port);
-    std::wstring counts = std::to_wstring(online) + L" online · " +
-                          std::to_wstring(running) + L" mapping(s) running · " +
-                          std::to_wstring(conns) + L" active session(s)";
+    std::wstring right = L"Listening on " + widen(rt_config_.bind_host) + L":" +
+        std::to_wstring(rt_config_.agent_port) + L"   ·   " +
+        std::to_wstring(online) + L" online · " +
+        std::to_wstring(running) + L" mapping(s) running · " +
+        std::to_wstring(conns) + L" active session(s)";
 
-    SendMessage(status_bar_, SB_SETTEXT, 0, reinterpret_cast<LPARAM>(L"Ready"));
-    SendMessage(status_bar_, SB_SETTEXT, 1, reinterpret_cast<LPARAM>(listen.c_str()));
-    SendMessage(status_bar_, SB_SETTEXT, 2, reinterpret_cast<LPARAM>(last_event_.c_str()));
-    SendMessage(status_bar_, SB_SETTEXT, 3, reinterpret_cast<LPARAM>(counts.c_str()));
+    SetWindowText(status_left_, last_event_.c_str());
+    SetWindowText(status_right_, right.c_str());
 }
 
 void MainWindow::update_toolbar_status() {
@@ -1311,6 +1432,8 @@ void MainWindow::on_settings() {
     config::save_remote_tool_config("remote_tool.json", rt_config_);
     sessions_->set_max_sessions(rt_config_.max_sessions_per_mapping);
     if (listen_changed) {
+        // The subtitle keeps showing the address we are actually bound to;
+        // the new value applies after restart.
         MessageBox(hwnd_,
             L"Listen address/port changes take effect after restarting RemoteTool.",
             L"Settings", MB_OK | MB_ICONINFORMATION);

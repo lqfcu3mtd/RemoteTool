@@ -187,25 +187,60 @@ function(cbmk_set_link_flags target)
     endif()
 endfunction()
 
+# MinGW's endfile spec unconditionally links its default-manifest.o, which
+# collides with our own RT_MANIFEST resource at link time (".rsrc merge
+# failure: multiple non-default manifests"). Shadow it with an empty object
+# placed earlier in the library search path.
+if(MINGW)
+    set(RMT_EMPTY_MANIFEST_DIR ${CMAKE_BINARY_DIR}/empty_manifest)
+    file(MAKE_DIRECTORY ${RMT_EMPTY_MANIFEST_DIR})
+    file(WRITE ${CMAKE_BINARY_DIR}/empty_manifest.cpp
+        "// Shadow object: wins the search for default-manifest.o so MinGW's\n"
+        "// built-in manifest is not linked (we embed our own via .rc).\n")
+    add_custom_command(
+        OUTPUT ${RMT_EMPTY_MANIFEST_DIR}/default-manifest.o
+        COMMAND ${CMAKE_CXX_COMPILER} -c ${CMAKE_BINARY_DIR}/empty_manifest.cpp
+                -o ${RMT_EMPTY_MANIFEST_DIR}/default-manifest.o
+        DEPENDS ${CMAKE_BINARY_DIR}/empty_manifest.cpp
+        VERBATIM)
+    add_custom_target(rmt_empty_manifest
+        DEPENDS ${RMT_EMPTY_MANIFEST_DIR}/default-manifest.o)
+endif()
+
+function(cbmk_shadow_default_manifest target)
+    if(MINGW)
+        add_dependencies(${target} rmt_empty_manifest)
+        # The spec's "%s" suffix search uses the -B prefix path, not -L.
+        target_link_options(${target} PRIVATE
+            "-B${RMT_EMPTY_MANIFEST_DIR}")
+    endif()
+endfunction()
+
 add_executable(remote_tool WIN32
     apps/remote_tool/main.cpp
     apps/remote_tool/gui/main_window.cpp
     apps/remote_tool/gui/dialogs.cpp
     apps/remote_tool/resources/remote_tool.rc
+    apps/shared/theme.cpp
 )
 target_include_directories(remote_tool PRIVATE
     ${CMAKE_SOURCE_DIR}/apps/remote_tool
+    ${CMAKE_SOURCE_DIR}/apps/shared
 )
-target_link_libraries(remote_tool PRIVATE rmt_core comctl32)
+target_link_libraries(remote_tool PRIVATE rmt_core comctl32 dwmapi uxtheme)
 cbmk_set_link_flags(remote_tool)
+cbmk_shadow_default_manifest(remote_tool)
 
 add_executable(agent_windows WIN32
     apps/agent_windows/main.cpp
     apps/agent_windows/gui/agent_window.cpp
     apps/agent_windows/resources/agent.rc
+    apps/shared/theme.cpp
 )
 target_include_directories(agent_windows PRIVATE
     ${CMAKE_SOURCE_DIR}/apps/agent_windows
+    ${CMAKE_SOURCE_DIR}/apps/shared
 )
-target_link_libraries(agent_windows PRIVATE rmt_core comctl32)
+target_link_libraries(agent_windows PRIVATE rmt_core comctl32 dwmapi uxtheme)
 cbmk_set_link_flags(agent_windows)
+cbmk_shadow_default_manifest(agent_windows)

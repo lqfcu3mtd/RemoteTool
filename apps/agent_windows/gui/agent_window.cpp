@@ -1,6 +1,7 @@
 #ifdef _WIN32
 #include "agent_window.h"
 #include "resources/resource.h"
+#include "theme.h"
 
 #include <commctrl.h>
 #include <cstdio>
@@ -10,10 +11,11 @@ namespace rmt::gui {
 
 namespace {
 
+// Logical (96 DPI) layout constants — scaled by theme::px() at runtime.
 constexpr int kWindowW = 520;
-constexpr int kWindowH = 420;
+constexpr int kWindowH = 460;
 constexpr int kMinW    = 440;
-constexpr int kMinH    = 360;
+constexpr int kMinH    = 400;
 
 constexpr wchar_t kAppTitle[] = L"RemoteTool Agent v0.1.0";
 
@@ -63,10 +65,13 @@ struct SettingsDlgContext {
 static INT_PTR CALLBACK SettingsDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto* ctx = reinterpret_cast<SettingsDlgContext*>(
         GetWindowLongPtr(hwnd, DWLP_USER));
+    INT_PTR themed = 0;
+    if (theme::handle_dialog_message(hwnd, msg, wp, lp, &themed)) return themed;
     switch (msg) {
         case WM_INITDIALOG: {
             ctx = reinterpret_cast<SettingsDlgContext*>(lp);
             SetWindowLongPtr(hwnd, DWLP_USER, reinterpret_cast<LONG_PTR>(ctx));
+            theme::style_dialog(hwnd);
             SetDlgItemText(hwnd, IDC_AS_DEVICE, widen(ctx->cfg->device_id).c_str());
             SetDlgItemText(hwnd, IDC_AS_HOST,   widen(ctx->cfg->server_host).c_str());
             SetDlgItemText(hwnd, IDC_AS_PORT,
@@ -143,28 +148,34 @@ int AgentWindow::run() {
     }
     rebuild_whitelist();
 
+    theme::init();
+
     WNDCLASSEX wc = {};
     wc.cbSize = sizeof(WNDCLASSEX);
     wc.lpfnWndProc = WndProc;
     wc.hInstance = GetModuleHandle(nullptr);
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
+    wc.hbrBackground = theme::bg_brush();
     wc.lpszClassName = L"AgentWindow";
     wc.hIcon = LoadIcon(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_APPICON));
     if (!wc.hIcon) wc.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
     RegisterClassEx(&wc);
 
     hwnd_ = CreateWindowEx(0, L"AgentWindow", kAppTitle,
-                           WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                           CW_USEDEFAULT, CW_USEDEFAULT, kWindowW, kWindowH,
+                           WS_OVERLAPPEDWINDOW | WS_VISIBLE | WS_CLIPCHILDREN,
+                           CW_USEDEFAULT, CW_USEDEFAULT,
+                           theme::px(kWindowW), theme::px(kWindowH),
                            nullptr, nullptr, GetModuleHandle(nullptr), this);
     if (!hwnd_) return 1;
+
+    theme::enable_dark_frame(hwnd_);
 
     MSG msg;
     while (GetMessage(&msg, nullptr, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
+    theme::shutdown();
     return static_cast<int>(msg.wParam);
 }
 
@@ -186,10 +197,19 @@ LRESULT AgentWindow::handle_message(UINT msg, WPARAM wp, LPARAM lp) {
         case WM_CREATE: on_create(); break;
         case WM_SIZE:   on_size();   break;
         case WM_TIMER:  on_timer();  break;
+        case WM_ERASEBKGND: return 1;  // background painted in WM_PAINT
+        case WM_PAINT:
+            theme::buffered_paint(hwnd_, &AgentWindow::paint_tramp, this);
+            break;
+        case WM_DRAWITEM:
+            if (theme::draw_button(reinterpret_cast<DRAWITEMSTRUCT*>(lp))) {
+                return TRUE;
+            }
+            break;
         case WM_GETMINMAXINFO: {
             auto* mmi = reinterpret_cast<MINMAXINFO*>(lp);
-            mmi->ptMinTrackSize.x = kMinW;
-            mmi->ptMinTrackSize.y = kMinH;
+            mmi->ptMinTrackSize.x = theme::px(kMinW);
+            mmi->ptMinTrackSize.y = theme::px(kMinH);
             break;
         }
         case WM_COMMAND: {
@@ -203,14 +223,8 @@ LRESULT AgentWindow::handle_message(UINT msg, WPARAM wp, LPARAM lp) {
             break;
         }
         case WM_CTLCOLORSTATIC:
-            if (reinterpret_cast<HWND>(lp) == lbl_state_big_) {
-                auto* hdc = reinterpret_cast<HDC>(wp);
-                SetTextColor(hdc, state_color_);
-                SetBkMode(hdc, TRANSPARENT);
-                return reinterpret_cast<LRESULT>(
-                    GetSysColorBrush(COLOR_BTNFACE));
-            }
-            return DefWindowProc(hwnd_, msg, wp, lp);
+            return handle_ctl_color_static(reinterpret_cast<HDC>(wp),
+                                           reinterpret_cast<HWND>(lp));
         case WM_USER:
             update_state(static_cast<tunnel::AgentState>(wp));
             break;
@@ -222,30 +236,16 @@ LRESULT AgentWindow::handle_message(UINT msg, WPARAM wp, LPARAM lp) {
 }
 
 void AgentWindow::create_fonts() {
-    HDC screen = GetDC(nullptr);
-    int dpi = screen ? GetDeviceCaps(screen, LOGPIXELSY) : 96;
-    if (screen) ReleaseDC(nullptr, screen);
-
-    LOGFONT lf = {};
-    lf.lfQuality = CLEARTYPE_QUALITY;
-    lf.lfCharSet = DEFAULT_CHARSET;
-
-    lf.lfHeight = -MulDiv(9, dpi, 96);
-    wcscpy_s(lf.lfFaceName, L"Segoe UI");
-    font_ui_ = CreateFontIndirect(&lf);
-
-    lf.lfHeight = -MulDiv(12, dpi, 96);
-    lf.lfWeight = FW_BOLD;
-    font_title_ = CreateFontIndirect(&lf);
-
-    lf.lfHeight = -MulDiv(24, dpi, 96);
-    lf.lfWeight = FW_BOLD;
-    font_state_ = CreateFontIndirect(&lf);
+    font_ui_       = theme::make_font(9, FW_NORMAL);
+    font_title_    = theme::make_font(11, FW_BOLD);
+    font_subtitle_ = theme::make_font(8, FW_NORMAL);
+    font_state_    = theme::make_font(24, FW_BOLD);
 }
 
 void AgentWindow::apply_fonts() {
     if (!font_ui_) return;
     const HWND ui[] = {
+        cap_device_, cap_server_, cap_activity_,
         lbl_device_, lbl_server_, lbl_attempts_, lbl_log_caption_, edit_log_,
         btn_settings_, btn_reconnect_, btn_about_, btn_exit_,
     };
@@ -256,6 +256,10 @@ void AgentWindow::apply_fonts() {
         SendMessage(static_title_, WM_SETFONT,
                     reinterpret_cast<WPARAM>(font_title_), TRUE);
     }
+    if (font_subtitle_ && static_subtitle_) {
+        SendMessage(static_subtitle_, WM_SETFONT,
+                    reinterpret_cast<WPARAM>(font_subtitle_), TRUE);
+    }
     if (font_state_ && lbl_state_big_) {
         SendMessage(lbl_state_big_, WM_SETFONT,
                     reinterpret_cast<WPARAM>(font_state_), TRUE);
@@ -263,32 +267,113 @@ void AgentWindow::apply_fonts() {
 }
 
 void AgentWindow::layout_controls(int W, int H) {
+    auto S = [](int v) { return theme::px(v); };
     auto place = [](HWND h, int x, int y, int w, int ht) {
         if (h) MoveWindow(h, x, y, w, ht, TRUE);
     };
-    const int pad = 16;
-    const int btn_h = 28;
+    const int pad = S(14);
+    const int gap = S(10);
+    const int band_h = S(46);
+    const int btn_h = S(30);
     const int btn_y = H - pad - btn_h;
-    const int log_bottom = btn_y - 10;
-    const int log_caption_y = 178;
-    const int log_y = log_caption_y + 18;
-    const int log_h = log_bottom > log_y ? log_bottom - log_y : 40;
+    const int content_w = W - 2 * pad;
 
-    place(static_title_, pad, 12, W - 2 * pad, 20);
-    place(lbl_state_big_, pad, 38, W - 2 * pad, 40);
-    place(lbl_device_,   pad, 92,  W - 2 * pad, 18);
-    place(lbl_server_,   pad, 114, W - 2 * pad, 18);
-    place(lbl_attempts_, pad, 136, W - 2 * pad, 18);
-    place(lbl_log_caption_, pad, log_caption_y, 200, 16);
-    place(edit_log_, pad, log_y, W - 2 * pad, log_h);
+    // Header band.
+    place(static_title_,    pad, S(10), content_w, S(18));
+    place(static_subtitle_, pad, S(28), content_w, S(13));
 
-    const int widths[] = {96, 96, 80, 80};
+    // Status card.
+    rc_status_card_ = {pad, band_h + gap, W - pad, band_h + gap + S(76)};
+    place(lbl_state_big_, pad + gap, rc_status_card_.top + S(14),
+          content_w - 2 * gap, S(44));
+
+    // Info card: three rows (dim caption + value).
+    rc_info_card_ = {pad, rc_status_card_.bottom + gap,
+                     W - pad, rc_status_card_.bottom + gap + S(88)};
+    const int cap_w = S(110);
+    const int row_x = pad + gap;
+    const int val_x = row_x + cap_w;
+    const int val_w = W - pad - gap - val_x;
+    int ry = rc_info_card_.top + S(12);
+    for (int i = 0; i < 3; ++i, ry += S(22)) {
+        const HWND caps[] = {cap_device_, cap_server_, cap_activity_};
+        const HWND vals[] = {lbl_device_, lbl_server_, lbl_attempts_};
+        place(caps[i], row_x, ry, cap_w - S(8), S(16));
+        place(vals[i], val_x, ry, val_w, S(16));
+    }
+
+    // Log card fills the remaining space.
+    rc_log_card_ = {pad, rc_info_card_.bottom + gap, W - pad, btn_y - gap};
+    place(lbl_log_caption_, pad + gap, rc_log_card_.top + S(8), S(200), S(14));
+    const int edit_y = rc_log_card_.top + S(28);
+    place(edit_log_, pad + S(6), edit_y, content_w - S(12),
+          rc_log_card_.bottom - S(6) - edit_y);
+
+    // Buttons.
+    const int widths[] = {100, 100, 84, 84};
     const HWND btns[] = {btn_settings_, btn_reconnect_, btn_about_, btn_exit_};
     int x = pad;
     for (int i = 0; i < 4; ++i) {
-        place(btns[i], x, btn_y, widths[i], btn_h);
-        x += widths[i] + 10;
+        place(btns[i], x, btn_y, S(widths[i]), btn_h);
+        x += S(widths[i]) + S(8);
     }
+}
+
+void AgentWindow::paint_tramp(HDC hdc, RECT client, void* ctx) {
+    static_cast<AgentWindow*>(ctx)->paint(hdc, client);
+}
+
+void AgentWindow::paint(HDC hdc, RECT client) {
+    // Window background.
+    HBRUSH bg = theme::bg_brush();
+    FillRect(hdc, &client, bg);
+
+    // Header band (full width, slightly darker).
+    RECT band = {0, 0, client.right, theme::px(46)};
+    FillRect(hdc, &band, theme::band_brush());
+    RECT band_line = {0, theme::px(46) - 1, client.right, theme::px(46)};
+    HBRUSH line = CreateSolidBrush(theme::kBorder);
+    FillRect(hdc, &band_line, line);
+    DeleteObject(line);
+
+    // Cards.
+    theme::fill_round_rect(hdc, rc_status_card_, theme::kCard,
+                           theme::kBorder, theme::px(8));
+    theme::fill_round_rect(hdc, rc_info_card_, theme::kCard,
+                           theme::kBorder, theme::px(8));
+    theme::fill_round_rect(hdc, rc_log_card_, theme::kCard,
+                           theme::kBorder, theme::px(8));
+}
+
+LRESULT AgentWindow::handle_ctl_color_static(HDC hdc, HWND control) {
+    // The read-only log arrives here too (read-only edits send
+    // WM_CTLCOLORSTATIC instead of WM_CTLCOLOREDIT).
+    if (control == edit_log_) {
+        SetTextColor(hdc, theme::kText);
+        SetBkColor(hdc, theme::kDeep);
+        return reinterpret_cast<LRESULT>(theme::deep_brush());
+    }
+    if (control == static_title_) {
+        SetTextColor(hdc, theme::kText);
+        SetBkColor(hdc, theme::kBand);
+        return reinterpret_cast<LRESULT>(theme::band_brush());
+    }
+    if (control == static_subtitle_) {
+        SetTextColor(hdc, theme::kTextDim);
+        SetBkColor(hdc, theme::kBand);
+        return reinterpret_cast<LRESULT>(theme::band_brush());
+    }
+    if (control == lbl_state_big_) {
+        SetTextColor(hdc, state_color_);
+        SetBkColor(hdc, theme::kCard);
+        return reinterpret_cast<LRESULT>(theme::card_brush());
+    }
+    // Everything else lives on a card: captions dim, values bright.
+    const bool is_caption = control == cap_device_ || control == cap_server_ ||
+                            control == cap_activity_ || control == lbl_log_caption_;
+    SetTextColor(hdc, is_caption ? theme::kTextDim : theme::kText);
+    SetBkColor(hdc, theme::kCard);
+    return reinterpret_cast<LRESULT>(theme::card_brush());
 }
 
 void AgentWindow::on_create() {
@@ -297,8 +382,21 @@ void AgentWindow::on_create() {
     static_title_ = CreateWindowEx(0, L"STATIC", L"RemoteTool Agent",
         WS_CHILD | WS_VISIBLE | SS_LEFT, 0, 0, 10, 10,
         hwnd_, nullptr, hi, nullptr);
-    lbl_state_big_ = CreateWindowEx(0, L"STATIC", L"Offline",
+    static_subtitle_ = CreateWindowEx(0, L"STATIC", L"Reverse tunnel client",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 0, 0, 10, 10,
+        hwnd_, nullptr, hi, nullptr);
+    lbl_state_big_ = CreateWindowEx(0, L"STATIC", L"\x25CF  Offline",
         WS_CHILD | WS_VISIBLE | SS_CENTER, 0, 0, 10, 10,
+        hwnd_, nullptr, hi, nullptr);
+
+    cap_device_ = CreateWindowEx(0, L"STATIC", L"Device ID",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 0, 0, 10, 10,
+        hwnd_, nullptr, hi, nullptr);
+    cap_server_ = CreateWindowEx(0, L"STATIC", L"Server",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 0, 0, 10, 10,
+        hwnd_, nullptr, hi, nullptr);
+    cap_activity_ = CreateWindowEx(0, L"STATIC", L"Activity",
+        WS_CHILD | WS_VISIBLE | SS_LEFT, 0, 0, 10, 10,
         hwnd_, nullptr, hi, nullptr);
     lbl_device_ = CreateWindowEx(0, L"STATIC", L"",
         WS_CHILD | WS_VISIBLE | SS_LEFT, 0, 0, 10, 10,
@@ -306,16 +404,19 @@ void AgentWindow::on_create() {
     lbl_server_ = CreateWindowEx(0, L"STATIC", L"",
         WS_CHILD | WS_VISIBLE | SS_LEFT, 0, 0, 10, 10,
         hwnd_, nullptr, hi, nullptr);
-    lbl_attempts_ = CreateWindowEx(0, L"STATIC", L"Reconnects: 0",
+    lbl_attempts_ = CreateWindowEx(0, L"STATIC", L"",
         WS_CHILD | WS_VISIBLE | SS_LEFT, 0, 0, 10, 10,
         hwnd_, nullptr, hi, nullptr);
+
     lbl_log_caption_ = CreateWindowEx(0, L"STATIC", L"Recent events",
         WS_CHILD | WS_VISIBLE | SS_LEFT, 0, 0, 10, 10,
         hwnd_, nullptr, hi, nullptr);
-    edit_log_ = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", L"",
+    edit_log_ = CreateWindowEx(0, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | ES_LEFT | ES_MULTILINE | ES_READONLY |
         ES_AUTOVSCROLL | WS_VSCROLL,
         0, 0, 10, 10, hwnd_, nullptr, hi, nullptr);
+    theme::untheme(edit_log_);
+    theme::enable_dark_scrollbars(edit_log_);
 
     btn_settings_ = CreateWindowEx(0, L"BUTTON", L"Settings...",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
@@ -330,6 +431,11 @@ void AgentWindow::on_create() {
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
         0, 0, 10, 10, hwnd_, (HMENU)IDC_AGENT_EXIT, hi, nullptr);
 
+    theme::make_flat_button(btn_settings_, true);  // primary action
+    theme::make_flat_button(btn_reconnect_);
+    theme::make_flat_button(btn_about_);
+    theme::make_flat_button(btn_exit_);
+
     create_fonts();
     apply_fonts();
     RECT rc; GetClientRect(hwnd_, &rc);
@@ -343,9 +449,10 @@ void AgentWindow::on_create() {
 }
 
 void AgentWindow::on_destroy() {
-    if (font_ui_)    { DeleteObject(font_ui_);    font_ui_ = nullptr; }
-    if (font_title_) { DeleteObject(font_title_); font_title_ = nullptr; }
-    if (font_state_) { DeleteObject(font_state_); font_state_ = nullptr; }
+    if (font_ui_)       { DeleteObject(font_ui_);       font_ui_ = nullptr; }
+    if (font_title_)    { DeleteObject(font_title_);    font_title_ = nullptr; }
+    if (font_subtitle_) { DeleteObject(font_subtitle_); font_subtitle_ = nullptr; }
+    if (font_state_)    { DeleteObject(font_state_);    font_state_ = nullptr; }
 }
 
 void AgentWindow::on_size() {
@@ -497,25 +604,25 @@ void AgentWindow::update_state(tunnel::AgentState state) {
         update_labels();
     }
 
-    const wchar_t* text = L"Unknown";
-    COLORREF color = RGB(0x88, 0x88, 0x88);
+    const wchar_t* text = L"\x25CF  Unknown";
+    COLORREF color = theme::kTextDim;
     switch (state) {
         case tunnel::AgentState::Disconnected:
-            text = L"Offline";       color = RGB(0xb0, 0x2a, 0x2a); break;
+            text = L"\x25CF  Offline";          color = theme::kErr; break;
         case tunnel::AgentState::Connecting:
-            text = L"Connecting..."; color = RGB(0xc0, 0x74, 0x00); break;
+            text = L"\x25CF  Connecting...";    color = theme::kWarn; break;
         case tunnel::AgentState::WaitHelloAck:
-            text = L"Authenticating..."; color = RGB(0x1f, 0x5a, 0xb8); break;
+            text = L"\x25CF  Authenticating..."; color = theme::kAccentHot; break;
         case tunnel::AgentState::Online:
-            text = L"Online";        color = RGB(0x0f, 0x6e, 0x38); break;
+            text = L"\x25CF  Online";           color = theme::kOk; break;
         case tunnel::AgentState::Error:
-            text = L"Error";         color = RGB(0xb0, 0x2a, 0x2a); break;
+            text = L"\x25CF  Error";            color = theme::kErr; break;
     }
     state_ = state;
     state_color_ = color;
     SetWindowText(lbl_state_big_, text);
     InvalidateRect(lbl_state_big_, nullptr, TRUE);
-    append_log(text);
+    append_log(text + 3);  // strip the "\x25CF  " dot prefix from the log line
 
     // Leaving the Online state means the tunnel is gone: drop all sessions.
     if (state != tunnel::AgentState::Online && session_mgr_ && io_) {
@@ -526,14 +633,13 @@ void AgentWindow::update_state(tunnel::AgentState state) {
 }
 
 void AgentWindow::update_labels() {
-    SetWindowText(lbl_device_,
-        (L"Device ID:  " + widen(cfg_.device_id)).c_str());
+    SetWindowText(lbl_device_, widen(cfg_.device_id).c_str());
     SetWindowText(lbl_server_,
-        (L"Server:  " + widen(cfg_.server_host) + L":" +
+        (widen(cfg_.server_host) + L":" +
          std::to_wstring(cfg_.server_port)).c_str());
     SetWindowText(lbl_attempts_,
-        (L"Reconnects: " + std::to_wstring(reconnect_attempts_) +
-         L"   ·   Active sessions: " + std::to_wstring(sessions_ui_)).c_str());
+        (std::to_wstring(reconnect_attempts_) + L" reconnects  ·  " +
+         std::to_wstring(sessions_ui_) + L" active sessions").c_str());
 }
 
 void AgentWindow::append_log(const std::wstring& line) {
