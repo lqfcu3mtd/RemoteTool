@@ -27,7 +27,8 @@ SessionManager::SessionManager(asio::io_context& io, DeviceManager& devices,
 
 std::uint32_t SessionManager::create_session(
     const std::string& device_id,
-    std::shared_ptr<TunnelConnection> tunnel) {
+    std::shared_ptr<TunnelConnection> tunnel,
+    const std::string& mapping_id) {
     auto sid = id_alloc_.allocate();
     if (sid == 0) {
         logger_.error("SessionManager: session ID exhausted");
@@ -46,6 +47,7 @@ std::uint32_t SessionManager::create_session(
     entry.state = SessionState::Idle;
     entry.tunnel = std::move(tunnel);
     entry.device_id = device_id;
+    entry.mapping_id = mapping_id;
     entry.read_buf.resize(kReadBufSize);
 
     sessions_[sid] = std::move(entry);
@@ -133,7 +135,11 @@ void SessionManager::on_session_frame(std::uint32_t session_id,
     }
 
     case MsgSessionData: {
-        if (s->state != SessionState::Connected) {
+        // Data from the agent is still valid after the local side has
+        // half-closed (HalfClosedLocal): the remote→local direction stays
+        // open until the agent half-closes or closes the session.
+        if (s->state != SessionState::Connected &&
+            s->state != SessionState::HalfClosedLocal) {
             logger_.warn("SessionManager: SESSION_DATA in non-connected state");
             return;
         }
@@ -148,7 +154,8 @@ void SessionManager::on_session_frame(std::uint32_t session_id,
     }
 
     case MsgSessionHalfClose: {
-        if (s->state != SessionState::Connected) {
+        if (s->state != SessionState::Connected &&
+            s->state != SessionState::HalfClosedLocal) {
             logger_.warn("SessionManager: HALF_CLOSE in non-connected state");
             return;
         }
@@ -157,6 +164,8 @@ void SessionManager::on_session_frame(std::uint32_t session_id,
         if (auto* msg =
                 std::get_if<rmt::protocol::SessionHalfCloseMessage>(&result)) {
             if (msg->direction == "write") {
+                const bool both_sides =
+                    (s->state == SessionState::HalfClosedLocal);
                 s->state = SessionState::HalfClosedRemote;
                 logger_.info("SessionManager: session "
                              + std::to_string(session_id)
@@ -166,6 +175,12 @@ void SessionManager::on_session_frame(std::uint32_t session_id,
                     asio::error_code ignored;
                     s->local_socket->shutdown(
                         asio::ip::tcp::socket::shutdown_send, ignored);
+                }
+                if (both_sides) {
+                    // Local write and remote write are both closed: the
+                    // session is finished.
+                    transition_to_closed(session_id,
+                                         "both sides half-closed");
                 }
             }
         } else {
@@ -211,7 +226,10 @@ void SessionManager::forward_local_to_agent(
         return;
     }
 
-    if (s->state != SessionState::Connected) {
+    // Local→agent data remains valid after the remote side half-closed
+    // (HalfClosedRemote): the local→remote direction stays open.
+    if (s->state != SessionState::Connected &&
+        s->state != SessionState::HalfClosedRemote) {
         return;
     }
 
@@ -321,7 +339,9 @@ void SessionManager::start_local_read(std::uint32_t session_id) {
     if (s->read_paused) {   // Phase 3b: backpressure
         return;
     }
-    if (s->state != SessionState::Connected) {
+    // Local reads continue while the local→agent direction is open.
+    if (s->state != SessionState::Connected &&
+        s->state != SessionState::HalfClosedRemote) {
         return;
     }
 
@@ -442,6 +462,18 @@ std::size_t SessionManager::active_session_count() const {
     std::size_t count = 0;
     for (const auto& [id, entry] : sessions_) {
         if (entry.state != SessionState::Idle && entry.state != SessionState::Closed)
+            ++count;
+    }
+    return count;
+}
+
+std::size_t SessionManager::active_sessions_for_mapping(
+    const std::string& mapping_id) const {
+    std::size_t count = 0;
+    for (const auto& [id, entry] : sessions_) {
+        if (entry.mapping_id == mapping_id &&
+            entry.state != SessionState::Idle &&
+            entry.state != SessionState::Closed)
             ++count;
     }
     return count;

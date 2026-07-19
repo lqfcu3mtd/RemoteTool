@@ -40,9 +40,11 @@ public:
 
     // Allocate a new session ID, register the session with the given tunnel
     // connection, and return the allocated ID. The local client socket must be
-    // attached separately via attach_local_socket().
+    // attached separately via attach_local_socket(). `mapping_id` tags the
+    // session for per-mapping statistics (may be empty).
     std::uint32_t create_session(const std::string& device_id,
-                                 std::shared_ptr<TunnelConnection> tunnel);
+                                 std::shared_ptr<TunnelConnection> tunnel,
+                                 const std::string& mapping_id = "");
 
     // Attach the accepted local client socket to an existing session.
     // After this, when the session becomes Active, bidirectional forwarding
@@ -69,6 +71,9 @@ public:
     int max_sessions() const noexcept { return max_sessions_; }
     std::size_t active_session_count() const;
 
+    // Number of non-Closed sessions tagged with the given mapping id.
+    std::size_t active_sessions_for_mapping(const std::string& mapping_id) const;
+
     // Phase 3b: clean up all sessions for a device when it goes offline.
     void remove_all_sessions_for_device(const std::string& device_id);
 
@@ -92,6 +97,7 @@ private:
         std::uint64_t bytes_local_in = 0;
         std::uint64_t bytes_local_out = 0;
         std::string device_id;
+        std::string mapping_id;
         std::vector<std::uint8_t> read_buf;
 
         // Track whether we are currently reading from local_socket to avoid
