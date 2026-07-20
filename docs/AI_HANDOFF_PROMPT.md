@@ -77,11 +77,21 @@ MSVC 生产验证：`bash tools/msvc-check.sh`（无 vcvars，脚本手动设 IN
 
 ## Git 提交指南（快速参考）
 
+> `git` 已安装到 `D:\tools\git\cmd\git.exe`，已加入用户 PATH。新开终端直接执行 `git` 即可。
+
 ```bash
 cd /d/coding/RemoteTool
 git add -A
 git commit -m "<scope>: <动词> <描述>"
 git push origin <当前分支>
+```
+
+```powershell
+# 如果 git 找不到，用完整路径
+cd D:\coding\RemoteTool
+D:\tools\git\cmd\git.exe add -A
+D:\tools\git\cmd\git.exe commit -m "<scope>: <动词> <描述>"
+D:\tools\git\cmd\git.exe push origin <当前分支>
 ```
 
 **提交信息格式**：`<scope>: <动词> <描述>`，例如 `ui: add dark theme`、`fix: correct session half-close`。
