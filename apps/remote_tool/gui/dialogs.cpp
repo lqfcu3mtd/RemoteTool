@@ -14,6 +14,7 @@
 
 #include "dialogs.h"
 #include "resources/resource.h"
+#include "theme.h"
 
 #include <algorithm>
 #include <cstring>
@@ -23,10 +24,30 @@
 namespace rmt::gui {
 
 std::wstring to_wide(const std::string& s) {
-    return std::wstring(s.begin(), s.end());
+    if (s.empty()) return {};
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(),
+                                static_cast<int>(s.size()), nullptr, 0);
+    if (n <= 0) n = MultiByteToWideChar(CP_ACP, 0, s.c_str(),
+                                        static_cast<int>(s.size()), nullptr, 0);
+    if (n <= 0) return {};
+    std::wstring w(static_cast<size_t>(n), L'\0');
+    if (MultiByteToWideChar(CP_UTF8, 0, s.c_str(),
+                            static_cast<int>(s.size()), w.data(), n) == 0) {
+        MultiByteToWideChar(CP_ACP, 0, s.c_str(),
+                            static_cast<int>(s.size()), w.data(), n);
+    }
+    return w;
 }
 std::string to_narrow(const std::wstring& w) {
-    return std::string(w.begin(), w.end());
+    if (w.empty()) return {};
+    int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(),
+                                static_cast<int>(w.size()), nullptr, 0,
+                                nullptr, nullptr);
+    if (n <= 0) return {};
+    std::string s(static_cast<size_t>(n), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()),
+                        s.data(), n, nullptr, nullptr);
+    return s;
 }
 
 void set_edit_text(HWND hwnd, int id, const std::string& s) {
@@ -49,10 +70,13 @@ struct DeviceDlgContext {
 static INT_PTR CALLBACK DeviceDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto* ctx = reinterpret_cast<DeviceDlgContext*>(
         GetWindowLongPtr(hwnd, DWLP_USER));
+    INT_PTR themed = 0;
+    if (theme::handle_dialog_message(hwnd, msg, wp, lp, &themed)) return themed;
     switch (msg) {
         case WM_INITDIALOG: {
             ctx = reinterpret_cast<DeviceDlgContext*>(lp);
             SetWindowLongPtr(hwnd, DWLP_USER, reinterpret_cast<LONG_PTR>(ctx));
+            theme::style_dialog(hwnd);
             if (ctx->is_edit) {
                 set_edit_text(hwnd, IDC_DD_ID, ctx->result->device_id);
                 set_edit_text(hwnd, IDC_DD_NAME, ctx->result->display_name);
@@ -141,10 +165,13 @@ void populate_device_dropdown(HWND hwnd, int combo_id,
 static INT_PTR CALLBACK MappingDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto* ctx = reinterpret_cast<MappingDlgContext*>(
         GetWindowLongPtr(hwnd, DWLP_USER));
+    INT_PTR themed = 0;
+    if (theme::handle_dialog_message(hwnd, msg, wp, lp, &themed)) return themed;
     switch (msg) {
         case WM_INITDIALOG: {
             ctx = reinterpret_cast<MappingDlgContext*>(lp);
             SetWindowLongPtr(hwnd, DWLP_USER, reinterpret_cast<LONG_PTR>(ctx));
+            theme::style_dialog(hwnd);
             set_edit_text(hwnd, IDC_MD_NAME, ctx->result->name);
             if (ctx->result->local_port > 0) {
                 set_edit_text(hwnd, IDC_MD_LPORT,
@@ -228,6 +255,88 @@ INT_PTR ShowMappingDialog(HWND parent,
     return DialogBoxParam(GetModuleHandle(nullptr),
                           MAKEINTRESOURCE(IDD_MAPPING_DIALOG),
                           parent, MappingDlgProc,
+                          reinterpret_cast<LPARAM>(&ctx));
+}
+
+// ============ Settings dialog ============
+
+struct SettingsDlgContext {
+    config::RemoteToolConfig* cfg;
+};
+
+static INT_PTR CALLBACK SettingsDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    auto* ctx = reinterpret_cast<SettingsDlgContext*>(
+        GetWindowLongPtr(hwnd, DWLP_USER));
+    INT_PTR themed = 0;
+    if (theme::handle_dialog_message(hwnd, msg, wp, lp, &themed)) return themed;
+    switch (msg) {
+        case WM_INITDIALOG: {
+            ctx = reinterpret_cast<SettingsDlgContext*>(lp);
+            SetWindowLongPtr(hwnd, DWLP_USER, reinterpret_cast<LONG_PTR>(ctx));
+            theme::style_dialog(hwnd);
+            set_edit_text(hwnd, IDC_ST_BIND_HOST, ctx->cfg->bind_host);
+            set_edit_text(hwnd, IDC_ST_AGENT_PORT,
+                          std::to_string(ctx->cfg->agent_port));
+            set_edit_text(hwnd, IDC_ST_HB_TIMEOUT,
+                          std::to_string(ctx->cfg->heartbeat_timeout_ms));
+            set_edit_text(hwnd, IDC_ST_MAX_SESS,
+                          std::to_string(ctx->cfg->max_sessions_per_mapping));
+            return TRUE;
+        }
+        case WM_COMMAND:
+            if (LOWORD(wp) == IDOK) {
+                std::string host = get_edit_text(hwnd, IDC_ST_BIND_HOST);
+                std::string port_s = get_edit_text(hwnd, IDC_ST_AGENT_PORT);
+                std::string hb_s   = get_edit_text(hwnd, IDC_ST_HB_TIMEOUT);
+                std::string sess_s = get_edit_text(hwnd, IDC_ST_MAX_SESS);
+                int port = 0, hb = 0, sess = 0;
+                try { port = std::stoi(port_s); } catch (...) {}
+                try { hb   = std::stoi(hb_s);   } catch (...) {}
+                try { sess = std::stoi(sess_s); } catch (...) {}
+                if (host.empty()) {
+                    MessageBox(hwnd, L"Bind host cannot be empty.",
+                               L"Validation", MB_OK | MB_ICONWARNING);
+                    return TRUE;
+                }
+                if (port <= 0 || port > 65535) {
+                    MessageBox(hwnd, L"Agent listen port must be in 1..65535.",
+                               L"Validation", MB_OK | MB_ICONWARNING);
+                    return TRUE;
+                }
+                if (hb < 1000 || hb > 600000) {
+                    MessageBox(hwnd,
+                               L"Heartbeat timeout must be in 1000..600000 ms.",
+                               L"Validation", MB_OK | MB_ICONWARNING);
+                    return TRUE;
+                }
+                if (sess <= 0 || sess > 1024) {
+                    MessageBox(hwnd,
+                               L"Max sessions per mapping must be in 1..1024.",
+                               L"Validation", MB_OK | MB_ICONWARNING);
+                    return TRUE;
+                }
+                ctx->cfg->bind_host = host;
+                ctx->cfg->agent_port = port;
+                ctx->cfg->heartbeat_timeout_ms = hb;
+                ctx->cfg->max_sessions_per_mapping = sess;
+                EndDialog(hwnd, IDOK);
+                return TRUE;
+            }
+            if (LOWORD(wp) == IDCANCEL) {
+                EndDialog(hwnd, IDCANCEL);
+                return TRUE;
+            }
+            return FALSE;
+    }
+    return FALSE;
+}
+
+INT_PTR ShowSettingsDialog(HWND parent, config::RemoteToolConfig* cfg) {
+    SettingsDlgContext ctx;
+    ctx.cfg = cfg;
+    return DialogBoxParam(GetModuleHandle(nullptr),
+                          MAKEINTRESOURCE(IDD_SETTINGS_DIALOG),
+                          parent, SettingsDlgProc,
                           reinterpret_cast<LPARAM>(&ctx));
 }
 

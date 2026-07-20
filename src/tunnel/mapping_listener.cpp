@@ -19,7 +19,7 @@ MappingListener::MappingListener(asio::io_context& io,
     logger_.set_level(rmt::common::LogLevel::Info);
 }
 
-void MappingListener::start(const std::string& bind_host,
+rmt::ErrorCode MappingListener::start(const std::string& bind_host,
                             std::uint16_t bind_port,
                             const std::string& device_id,
                             const std::string& mapping_id,
@@ -40,14 +40,16 @@ void MappingListener::start(const std::string& bind_host,
     auto addr = asio::ip::make_address(bind_host, ec);
     if (ec) {
         logger_.error("MappingListener: invalid bind address " + bind_host);
-        return;
+        acceptor_.reset();
+        return rmt::ErrorCode::InvalidPayload;
     }
 
     asio::ip::tcp::endpoint ep{addr, bind_port};
     acceptor_->open(ep.protocol(), ec);
     if (ec) {
         logger_.error("MappingListener: open failed: " + ec.message());
-        return;
+        acceptor_.reset();
+        return rmt::ErrorCode::InternalError;
     }
 
     acceptor_->set_option(asio::ip::tcp::acceptor::reuse_address(true), ec);
@@ -55,13 +57,15 @@ void MappingListener::start(const std::string& bind_host,
     acceptor_->bind(ep, ec);
     if (ec) {
         logger_.error("MappingListener: bind failed: " + ec.message());
-        return;
+        acceptor_.reset();
+        return rmt::ErrorCode::InternalError;
     }
 
     acceptor_->listen(asio::socket_base::max_listen_connections, ec);
     if (ec) {
         logger_.error("MappingListener: listen failed: " + ec.message());
-        return;
+        acceptor_.reset();
+        return rmt::ErrorCode::InternalError;
     }
 
     auto lep = acceptor_->local_endpoint(ec);
@@ -75,6 +79,7 @@ void MappingListener::start(const std::string& bind_host,
     }
 
     do_accept();
+    return rmt::ErrorCode::Ok;
 }
 
 void MappingListener::stop() {
@@ -134,7 +139,8 @@ void MappingListener::do_accept() {
             }
 
             // Create session.
-            auto session_id = session_mgr_.create_session(device_id_, tunnel);
+            auto session_id = session_mgr_.create_session(device_id_, tunnel,
+                                                          mapping_id_);
             if (session_id == 0) {
                 logger_.error("MappingListener: failed to create session");
                 asio::error_code ignored;

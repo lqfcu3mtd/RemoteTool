@@ -11,10 +11,13 @@
 # All dependencies ship with the repo - no network fetch required.
 
 # --- mbedTLS 2.28.7 LTS ---
+# Use the slim RemoteTool-specific config (PSK + AES-128-GCM only).
+# See third_party/mbedtls/include/mbedtls/config_rmt.h for the rationale.
 set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
 set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "" FORCE)  # suppress -Werror from mbedTLS
+set(MBEDTLS_CONFIG_FILE "mbedtls/config_rmt.h" CACHE FILEPATH "" FORCE)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/mbedtls EXCLUDE_FROM_ALL)
 unset(CMAKE_POLICY_VERSION_MINIMUM)
-message(STATUS "mbedTLS 2.28.7 ready")
+message(STATUS "mbedTLS 2.28.7 ready (slim PSK-only config)")

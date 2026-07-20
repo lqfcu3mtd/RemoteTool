@@ -28,10 +28,12 @@ public:
     // Start listening on bind_host:bind_port. When a local client connects,
     // create a session for the given device_id/mapping_id that forwards to
     // target_host:target_port on the agent side.
-    void start(const std::string& bind_host, std::uint16_t bind_port,
-               const std::string& device_id, const std::string& mapping_id,
-               const std::string& target_host, std::uint16_t target_port,
-               int connect_timeout_ms = 10000);
+    // Returns ErrorCode::Ok on success; on failure the listener stays stopped
+    // and the reason is logged.
+    rmt::ErrorCode start(const std::string& bind_host, std::uint16_t bind_port,
+                         const std::string& device_id, const std::string& mapping_id,
+                         const std::string& target_host, std::uint16_t target_port,
+                         int connect_timeout_ms = 10000);
 
     // Stop accepting new connections and close the acceptor.
     void stop();

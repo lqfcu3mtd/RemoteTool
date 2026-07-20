@@ -1,7 +1,35 @@
-// Resource script for RemoteTool — dialog templates only.
-// Window icon uses Windows default (no custom .ico bundled yet).
+// Resource script for RemoteTool — dialog templates, menu, icon, version.
 #include <windows.h>
 #include "resource.h"
+
+IDI_APPICON ICON "app.ico"
+
+// comctl32 v6 visual styles + system DPI awareness (see remote_tool.manifest).
+1 24 "remote_tool.manifest"
+
+IDR_MAINMENU MENU
+BEGIN
+    POPUP "&File"
+    BEGIN
+        MENUITEM "E&xit\tAlt+F4",  IDM_FILE_EXIT
+    END
+    POPUP "&Edit"
+    BEGIN
+        MENUITEM "&Add device...\tCtrl+N",    IDM_EDIT_ADD_DEVICE
+        MENUITEM "&Add mapping...\tCtrl+M",   IDM_EDIT_ADD_MAPPING
+        MENUITEM SEPARATOR
+        MENUITEM "&Settings...",              IDM_FILE_SETTINGS
+    END
+    POPUP "&View"
+    BEGIN
+        MENUITEM "&Refresh\tF5",              IDM_VIEW_REFRESH
+        MENUITEM "Show &all mappings",        IDM_VIEW_SHOW_ALL
+    END
+    POPUP "&Help"
+    BEGIN
+        MENUITEM "&About RemoteTool...",      IDM_HELP_ABOUT
+    END
+END
 
 IDD_DEVICE_DIALOG DIALOGEX 0, 0, 320, 100
 CAPTION "Device"
@@ -31,4 +59,35 @@ BEGIN
     EDITTEXT     IDC_MD_TPORT,  100, 96,  80, 14, ES_NUMBER | WS_TABSTOP
     DEFPUSHBUTTON "OK",         IDOK,  180, 140, 70, 24, WS_TABSTOP
     PUSHBUTTON   "Cancel",     IDCANCEL, 260, 140, 70, 24, WS_TABSTOP
+END
+
+IDD_ABOUT_DIALOG DIALOGEX 0, 0, 320, 160
+CAPTION "About RemoteTool"
+FONT 9, "Segoe UI"
+BEGIN
+    ICON         IDI_APPICON,     -1,  16, 16, 32, 32, SS_ICON
+    LTEXT        "RemoteTool",    -1,  60, 18, 200, 18, SS_LEFT
+    LTEXT        "Lightweight reverse tunnel for remote maintenance", -1,
+                 60, 36, 240, 30
+    LTEXT        "Version 0.1.0",  -1,  60, 70, 200, 14
+    LTEXT        "(c) 2026",       -1,  60, 86, 200, 14
+    DEFPUSHBUTTON "OK",            IDOK, 230, 120, 70, 24, WS_TABSTOP
+END
+
+IDD_SETTINGS_DIALOG DIALOGEX 0, 0, 320, 160
+CAPTION "Settings"
+FONT 9, "Segoe UI"
+BEGIN
+    LTEXT        "Bind host",       -1,  10, 12, 100, 14
+    EDITTEXT     IDC_ST_BIND_HOST, 120, 10, 180, 14, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT        "Agent listen port", -1, 10, 36, 100, 14
+    EDITTEXT     IDC_ST_AGENT_PORT, 120, 34,  80, 14, ES_NUMBER | WS_TABSTOP
+    LTEXT        "Heartbeat timeout (ms)", -1, 10, 60, 105, 14
+    EDITTEXT     IDC_ST_HB_TIMEOUT, 120, 58,  80, 14, ES_NUMBER | WS_TABSTOP
+    LTEXT        "Max sessions / mapping", -1, 10, 84, 105, 14
+    EDITTEXT     IDC_ST_MAX_SESS,   120, 82,  80, 14, ES_NUMBER | WS_TABSTOP
+    LTEXT        "(port changes take effect after restart)", -1,
+                 10, 106, 290, 14
+    DEFPUSHBUTTON "OK",            IDOK,  150, 128, 70, 24, WS_TABSTOP
+    PUSHBUTTON   "Cancel",       IDCANCEL, 230, 128, 70, 24, WS_TABSTOP
 END

@@ -105,9 +105,22 @@ void TunnelConnection::send_frame(const rmt::protocol::Frame& frame,
 
     auto encoded = rmt::protocol::encode_frame(frame);
 
-    // Control frames (everything except SESSION_DATA) go to the priority queue.
-    bool is_data = (frame.header.type == rmt::protocol::MsgSessionData);
-    auto& q = is_data ? data_queue_ : control_queue_;
+    // Priority is ONLY safe for connection-level frames (HELLO/HEARTBEAT/
+    // pairing/protocol-error): they carry no ordering relationship with
+    // session traffic. Session-scoped frames (OPEN_SESSION, SESSION_OPENED,
+    // SESSION_DATA, HALF_CLOSE, CLOSE_SESSION, ...) MUST stay FIFO with the
+    // session's data — a prioritized HALF_CLOSE would overtake queued
+    // SESSION_DATA of the same session and the receiver would tear the
+    // session down before the data arrives.
+    bool is_conn_control =
+        (frame.header.type == rmt::protocol::MsgHello
+         || frame.header.type == rmt::protocol::MsgHelloAck
+         || frame.header.type == rmt::protocol::MsgHeartbeat
+         || frame.header.type == rmt::protocol::MsgHeartbeatAck
+         || frame.header.type == rmt::protocol::MsgPairProvision
+         || frame.header.type == rmt::protocol::MsgPairProvisionAck
+         || frame.header.type == rmt::protocol::MsgProtocolError);
+    auto& q = is_conn_control ? control_queue_ : data_queue_;
     q.push_back({std::move(encoded), std::move(on_sent)});
 
     if (!writing_) {
@@ -179,24 +192,27 @@ void TunnelConnection::do_read() {
 
 void TunnelConnection::do_write() {
     // Priority: control frames always before data frames (PROTOCOL_SPEC section 11).
-    auto& q = !control_queue_.empty() ? control_queue_ : data_queue_;
-    if (q.empty()) {
+    // NOTE: capture the queue by POINTER, never by reference — a captured
+    // reference would dangle as soon as this stack frame unwinds, and the
+    // completion handler runs after that.
+    auto* q = !control_queue_.empty() ? &control_queue_ : &data_queue_;
+    if (q->empty()) {
         writing_ = false;
         return;
     }
 
     writing_ = true;
-    auto& entry = q.front();
+    auto& entry = q->front();
 
     asio::async_write(socket_, asio::buffer(entry.data),
-        [this, &q](const asio::error_code& ec, std::size_t /*bytes_transferred*/) {
-            if (q.empty()) {
+        [this, q](const asio::error_code& ec, std::size_t /*bytes_transferred*/) {
+            if (q->empty()) {
                 writing_ = false;
                 return;
             }
 
-            auto entry = std::move(q.front());
-            q.pop_front();
+            auto entry = std::move(q->front());
+            q->pop_front();
 
             if (ec) {
                 if (ec != asio::error::operation_aborted) {

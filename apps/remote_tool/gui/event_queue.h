@@ -2,15 +2,11 @@
 // Thread-safe event queue for UI updates from the network thread.
 // CODING_STANDARDS.md section 6: GUI thread must not run io_context;
 // network events are posted to this queue and consumed by the UI thread
-// via WM_TIMER or a custom window message.
-//
-// Phase 4 MVP: simple string-based events. The UI thread calls poll()
-// periodically (e.g. WM_TIMER) and processes each event.
+// via WM_TIMER.
 
 #include <deque>
 #include <functional>
 #include <mutex>
-#include <string>
 #include <vector>
 
 namespace rmt::gui {
@@ -24,10 +20,6 @@ public:
         std::lock_guard<std::mutex> lk(m_);
         q_.push_back(std::move(action));
     }
-
-    // Convenience: push a device-online / device-offline event.
-    void device_online(const std::string& device_id, const std::string& address);
-    void device_offline(const std::string& device_id);
 
     // Drain and execute all pending events on the calling thread (UI thread).
     void process() {

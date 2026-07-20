@@ -58,6 +58,14 @@ public:
     void set_on_state_change(std::function<void(AgentState)> cb);
     void set_on_frame(std::function<void(const protocol::Frame&)> cb);
 
+    // Access the live tunnel connection (nullptr while not connected). The
+    // returned shared_ptr keeps the tunnel alive for session handlers even if
+    // the AgentConnection later tears it down and reconnects.
+    std::shared_ptr<TunnelConnection> tunnel() const noexcept { return connection_; }
+
+    // Expose the io_context so session handlers can be constructed on it.
+    asio::io_context& io() noexcept { return io_; }
+
 private:
     // Internal helpers
     void do_connect();
@@ -94,7 +102,7 @@ private:
     AgentState state_ = AgentState::Disconnected;
     bool stopping_ = false;
 
-    std::unique_ptr<TunnelConnection> connection_;
+    std::shared_ptr<TunnelConnection> connection_;
 
     static constexpr long long kHelloTimeoutMs = 5000;
     static constexpr long long kDefaultHeartbeatIntervalMs = 10000;

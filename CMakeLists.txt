@@ -15,18 +15,34 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 if(MSVC)
     add_compile_options(/W4 /permissive- /EHsc)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
-    # Release 优化
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
-        add_compile_options(/O2)
+        # /Os   - size optimization
+        # /Gy   - separate functions for linker COMDAT folding
+        # /GL   - whole-program optimization (LTCG)
+        add_compile_options(/Os /Gy /GL)
+        add_compile_definitions(NDEBUG)
+        add_link_options(/LTCG /OPT:REF /OPT:ICF /DEBUG:NONE)
     endif()
 else()
     add_compile_options(-Wall -Wextra -Wpedantic)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
-        add_compile_options(-O2)
+        # -Os                 - size optimization
+        # -ffunction-sections - one section per function (for --gc-sections)
+        # -fdata-sections     - one section per data item
+        add_compile_options(-Os -ffunction-sections -fdata-sections)
+        add_compile_definitions(NDEBUG)
+        # --gc-sections drops unreferenced sections (mbedTLS leftovers)
+        # -s strips symbols at link time
+        add_link_options(-Wl,--gc-sections -Wl,-s)
     endif()
 endif()
 
 add_compile_definitions(ASIO_STANDALONE)
+# Target Windows 7+ for the Win32/Asio API surface (silences the standalone
+# Asio fallback #warning about _WIN32_WINNT being undefined).
+if(WIN32)
+    add_compile_definitions(_WIN32_WINNT=0x0601 WINVER=0x0601)
+endif()
 
 # --- 输出目录 ---
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -51,6 +67,7 @@ add_library(rmt_core STATIC
     src/tunnel/device_manager.cpp
     src/tunnel/acceptor.cpp
     src/tunnel/agent_session.cpp
+    src/tunnel/agent_session_manager.cpp
     src/tunnel/session_manager.cpp
     src/tunnel/mapping_listener.cpp
     src/platform/dpapi_secret_store.cpp
@@ -157,26 +174,46 @@ add_test(NAME config_loader_test COMMAND config_loader_test)
 
 # --- 应用程序（Phase 4 GUI）---
 # When building with MinGW, the resulting .exe depends on the GCC runtime
-# DLLs (libgcc_s_seh-1, libstdc++-6, libwinpthread-1). On Windows the loader
-# looks in the .exe's directory first, so copy them next to the binary
-# as a post-build step. Detect the MinGW bin dir from the compiler path.
-if(MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    get_filename_component(_mingw_bin_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
-    set(_mingw_runtime_dlls
-        "${_mingw_bin_dir}/libgcc_s_seh-1.dll"
-        "${_mingw_bin_dir}/libstdc++-6.dll"
-        "${_mingw_bin_dir}/libwinpthread-1.dll")
+# DLLs (libgcc_s_seh-1, libstdc++-6, libwinpthread-1). For the green
+# distribution (only 2 .exe files in dist/), we statically link the runtime
+# so no DLLs are needed at runtime. MSVC keeps the dynamic CRT because it
+# already requires vcruntime140.dll system-wide.
+function(cbmk_set_link_flags target)
+    if(MINGW AND CMAKE_BUILD_TYPE STREQUAL "Release")
+        target_link_options(${target} PRIVATE
+            -static
+            -static-libgcc
+            -static-libstdc++)
+    endif()
+endfunction()
+
+# MinGW's endfile spec unconditionally links its default-manifest.o, which
+# collides with our own RT_MANIFEST resource at link time (".rsrc merge
+# failure: multiple non-default manifests"). Shadow it with an empty object
+# placed earlier in the library search path.
+if(MINGW)
+    set(RMT_EMPTY_MANIFEST_DIR ${CMAKE_BINARY_DIR}/empty_manifest)
+    file(MAKE_DIRECTORY ${RMT_EMPTY_MANIFEST_DIR})
+    file(WRITE ${CMAKE_BINARY_DIR}/empty_manifest.cpp
+        "// Shadow object: wins the search for default-manifest.o so MinGW's\n"
+        "// built-in manifest is not linked (we embed our own via .rc).\n")
+    add_custom_command(
+        OUTPUT ${RMT_EMPTY_MANIFEST_DIR}/default-manifest.o
+        COMMAND ${CMAKE_CXX_COMPILER} -c ${CMAKE_BINARY_DIR}/empty_manifest.cpp
+                -o ${RMT_EMPTY_MANIFEST_DIR}/default-manifest.o
+        DEPENDS ${CMAKE_BINARY_DIR}/empty_manifest.cpp
+        VERBATIM)
+    add_custom_target(rmt_empty_manifest
+        DEPENDS ${RMT_EMPTY_MANIFEST_DIR}/default-manifest.o)
 endif()
 
-function(cbmk_copy_mingw_runtime target)
-    if(NOT MINGW)
-        return()
+function(cbmk_shadow_default_manifest target)
+    if(MINGW)
+        add_dependencies(${target} rmt_empty_manifest)
+        # The spec's "%s" suffix search uses the -B prefix path, not -L.
+        target_link_options(${target} PRIVATE
+            "-B${RMT_EMPTY_MANIFEST_DIR}")
     endif()
-    add_custom_command(TARGET ${target} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${_mingw_runtime_dlls}
-            $<TARGET_FILE_DIR:${target}>
-        COMMENT "Copying MinGW runtime DLLs next to ${target}.exe")
 endfunction()
 
 add_executable(remote_tool WIN32
@@ -184,16 +221,26 @@ add_executable(remote_tool WIN32
     apps/remote_tool/gui/main_window.cpp
     apps/remote_tool/gui/dialogs.cpp
     apps/remote_tool/resources/remote_tool.rc
+    apps/shared/theme.cpp
 )
 target_include_directories(remote_tool PRIVATE
     ${CMAKE_SOURCE_DIR}/apps/remote_tool
+    ${CMAKE_SOURCE_DIR}/apps/shared
 )
-target_link_libraries(remote_tool PRIVATE rmt_core comctl32)
-cbmk_copy_mingw_runtime(remote_tool)
+target_link_libraries(remote_tool PRIVATE rmt_core comctl32 dwmapi uxtheme)
+cbmk_set_link_flags(remote_tool)
+cbmk_shadow_default_manifest(remote_tool)
 
 add_executable(agent_windows WIN32
     apps/agent_windows/main.cpp
     apps/agent_windows/gui/agent_window.cpp
+    apps/agent_windows/resources/agent.rc
+    apps/shared/theme.cpp
 )
-target_link_libraries(agent_windows PRIVATE rmt_core comctl32)
-cbmk_copy_mingw_runtime(agent_windows)
+target_include_directories(agent_windows PRIVATE
+    ${CMAKE_SOURCE_DIR}/apps/agent_windows
+    ${CMAKE_SOURCE_DIR}/apps/shared
+)
+target_link_libraries(agent_windows PRIVATE rmt_core comctl32 dwmapi uxtheme)
+cbmk_set_link_flags(agent_windows)
+cbmk_shadow_default_manifest(agent_windows)

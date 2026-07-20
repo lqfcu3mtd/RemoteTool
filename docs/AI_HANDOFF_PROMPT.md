@@ -1,166 +1,104 @@
-# 通用AI开发交接提示词
+# AI 交接提示词（kimi-code 版）
 
-> 本文档面向任何具备仓库读写和命令执行能力的 AI agent（Codex、Claude Code、Cursor、Gemini CLI、WorkBuddy 等）。不依赖任何 agent 的私人记忆或会话历史——所有知识都在仓库内。
+> 本文档面向 kimi-code（或任何具备仓库读写与命令执行能力的 AI agent）。不依赖任何 agent 的私人记忆或会话历史——所有知识都在仓库内。上一棒：kimi-work agent（2026-07-19 完成 GUI 审查加固 + Agent 侧 Session 通路接通）。
+
+## 当前完成状态（一句话版）
+
+Phase 0–5 完成，Phase 6 进行中：**端到端端口转发已在本机验证通过**（RemoteTool 映射监听 → 隧道 → Agent → 目标 echo，双向 sha256 一致），Agent 侧目标白名单已强制执行；两个 Win32 GUI 可用；MinGW 构建零警告、16/16 ctest 全绿；`tools/build-release.sh` 绿色发布已验证。**链路目前是明文 TCP（server-side TLS 未实现），配对码是 UI 层 stub——这是剩余的主要工作。**
 
 ## 接手前必读（按顺序）
 
 | 序号 | 文件 | 内容 |
 |---|---|---|
-| 1 | `STATUS.md` | **当前进度、已完成、测试结果、已知限制、下一步**（进度的唯一真实来源） |
-| 2 | `docs/README.md` | 文档索引 |
-| 3 | `docs/DEVELOPMENT_SPEC.md` | 产品规格（最高优先级） |
-| 4 | `docs/PROTOCOL_SPEC.md` | RMT/1 协议规范 |
-| 5 | `docs/IMPLEMENTATION_PLAN.md` | Phase 0-6 实施计划 |
-| 6 | `docs/CONFIG_SPEC.md` | 配置 schema |
-| 7 | `docs/TEST_PLAN.md` | 测试计划 |
-| 8 | `docs/CODING_STANDARDS.md` | 代码规范（命名、命名空间、头文件、平台隔离、RAII、提交粒度） |
-| 9 | `docs/ENVIRONMENT.md` | 开发环境验证记录（工具链位置、版本、验证脚本） |
+| 1 | `STATUS.md` | **当前进度、架构要点、已知限制、下一步**（进度的唯一真实来源） |
+| 2 | `README.md` | 构建/使用/白名单/发布说明 |
+| 3 | `OPERATION_MANUAL.md` | GUI 操作与冒烟验证 |
+| 4 | `docs/README.md` | 文档索引与已确认的关键决策 |
+| 5 | `docs/DEVELOPMENT_SPEC.md` | 产品规格（最高优先级） |
+| 6 | `docs/PROTOCOL_SPEC.md` | RMT/1 协议规范（线上格式不可偏离） |
+| 7 | `docs/CONFIG_SPEC.md` | 4 种配置文件 schema |
+| 8 | `docs/IMPLEMENTATION_PLAN.md` | Phase 0–6 任务与完成定义 |
+| 9 | `docs/TEST_PLAN.md` | 测试矩阵与发布验收 |
+| 10 | `docs/CODING_STANDARDS.md` | 命名/分层/RAII/提交规范 |
+| 11 | `docs/ENVIRONMENT.md` + `docs/INSTALL.md` | 工具链位置与已知坑 |
 
-> **不要依赖历史聊天记录或 agent 私人记忆。** 仓库内文档是唯一需求来源。
-
-## 接手后第一步：验证环境
+## 环境验证（接手后第一步，必做）
 
 ```bash
-# 开发期验证（MinGW，免管理员）
-bash tools/devcheck.sh
-# 期望：frame_test: 49 passed, 0 failed
+# Git Bash 下；cmake/ninja/g++ 都在 D:\tools\mingw64\bin
+export PATH="/d/tools/mingw64/bin:$PATH"
+cd /d/coding/RemoteTool
 
-# 生产构建验证（MSVC，需 VS2022）
-bash tools/msvc-check.sh
-# 期望：frame_test: 49 passed, 0 failed
+cmake --preset dev-mingw && cmake --build --preset dev-mingw && ctest --preset dev-mingw
+# 期望：零警告，16/16 通过（multi_session_test Disabled 属正常）
+
+python tools/smoke_e2e.py
+# 期望：[smoke] PASS（端到端 echo sha256 校验，自动清理进程）
+
+bash tools/build-release.sh   # 可选：绿色发布验证 → dist/
 ```
 
-若环境不满足，参见 `docs/INSTALL.md` 和 `docs/ENVIRONMENT.md`。
+MSVC 生产验证：`bash tools/msvc-check.sh`（无 vcvars，脚本手动设 INCLUDE/LIB；Git Bash 下 `cmd //c vcvars64.bat` 不可用，见 ENVIRONMENT.md）。
 
-## 首次开始项目
+## 架构要点（不要违背）
 
-```text
-你正在开发 Remote Maintenance Tunnel Tool。
+- **分层**：核心库 `rmt_core`（`include/rmt/` + `src/`：protocol/config/security/tunnel/session/common/platform）不依赖 `apps/`；Win32 API 只允许出现在 `src/platform/` 和两个 GUI app 中。
+- **线程模型**：GUI 线程绝不触碰 socket；io_context 跑在工作线程。
+  - remote_tool：网络回调 → `EventQueue`（互斥队列）→ 500ms 定时器在 GUI 线程排空；per-mapping 会话计数反向经 `asio::post` 到 io 线程查询、再经 EventQueue 回投。
+  - agent_windows：回调 → `PostMessage(WM_USER)` + 互斥日志队列（定时器排空）。
+- **帧分发模式**（两侧对称）：
+  - RemoteTool：`DeviceManager::set_on_unhandled_frame → SessionManager::on_session_frame(session_id, frame)`
+  - Agent：`AgentSessionManager` 接管 `AgentConnection::set_on_frame`；OPEN_SESSION 创建 `AgentSession`（白名单检查、目标连接、超时在其中完成），SESSION_DATA/HALF_CLOSE/CLOSE_SESSION 按 `frame.header.session_id` 路由；断线 `clear_all()`。
+- **隧道共享**：`AgentConnection::tunnel()` 返回 `shared_ptr<TunnelConnection>`，会话可安全持有旧隧道直到关闭。
+- **半关闭状态机**（2026-07-19 修过，勿回退）：`SESSION_DATA` 在 `Connected|HalfClosedLocal` 接收；对端 HALF_CLOSE 在 `HalfClosedLocal` 表示双侧关闭；本地读/转发在 `HalfClosedRemote` 保持开放。
+- **白名单 fail closed**：`TargetWhitelist` 空白名单/无效策略 = 全部拒绝；只接受 IP 字面量，永不解析域名。
+- **GDI/句柄**：字体等 GDI 对象成成员、WM_DESTROY 释放；MappingListener 销毁经 `asio::post` 延迟到 io 线程（accept 回调持裸 this）。
+- **构建纪律**：`-Wall -Wextra -Wpedantic` 零警告是硬要求；已定义 `_WIN32_WINNT=0x0601`。
 
-在修改任何代码之前，按顺序完整阅读：
-1. STATUS.md — 当前进度
-2. docs/README.md — 文档索引
-3. docs/DEVELOPMENT_SPEC.md — 产品规格
-4. docs/PROTOCOL_SPEC.md — 协议规范
-5. docs/IMPLEMENTATION_PLAN.md — 实施计划
-6. docs/CONFIG_SPEC.md — 配置规范
-7. docs/TEST_PLAN.md — 测试计划
-8. docs/CODING_STANDARDS.md — 代码规范
-9. docs/ENVIRONMENT.md — 环境验证
+## 遗留任务清单（按优先级）
 
-这些文件是完整需求来源。不要依赖历史聊天，不要自行扩展产品范围。
+1. **Settings 对话框支持编辑 `target_policy`**（agent_windows）：当前对话框保存会用手改前的内存配置覆盖 agent.json 的白名单（workaround：手改后重启、不点 OK）。
+2. **PSK 配对协议接通**：替换配对码 UI stub；实现 server-side TLS（HELLO 后按设备 PSK 升级为 mbedTLS PSK + AES-128-GCM；client path 已完成可参考 `src/security/tls_mbedtls.cpp`）。
+3. **心跳 `active_sessions` 接真实统计**（`AgentConnection::send_heartbeat` 目前硬编码 0）。
+4. **MSVC 构建复验**：完整 CMake + mbedTLS + GUI 链接 + Release 回归（上次仅 frame/messages/config_loader 单测过）。
+5. **启用/修复 2 个 Disabled 集成测试**：`multi_session_test`（async chain hang）、`agent_session_test::test_bidirectional`；补大规模并发（32/128 echo）与 30 分钟稳定性测试。
+6. **每设备 session 统计列**（Devices 列表加回 Sess 列，需 per-device 计数）。
 
-接手后先验证环境：
-- 运行 bash tools/devcheck.sh（MinGW 开发期）
-- 运行 bash tools/msvc-check.sh（MSVC 生产构建）
-- 确认 frame_test 49/49 通过后再开始编码
+次要：`atomic_write` 无 fsync；`AgentSessionManager` 的 `on_event` 只传文本（可考虑结构化事件）。
 
-开发规则：
-- 严格按 IMPLEMENTATION_PLAN.md 的 Phase 顺序推进；
-- 当前只实施我指定的Phase；
-- 先检查仓库现状和已有改动，不覆盖用户已有内容；
-- 遵守 docs/CODING_STANDARDS.md 的命名、命名空间、头文件、平台隔离和 RAII 规范；
-- 实现功能后运行该Phase要求的测试；
-- 不添加fallback、旧协议兼容、静默降级或未要求功能；
-- 不以空实现、永远成功、忽略错误或放宽测试来通过验收；
-- 协议线上格式必须完全符合 PROTOCOL_SPEC.md；
-- 所有Socket、线程、Timer和Windows句柄必须可靠释放；
-- 不在日志中记录PSK、配对密钥或Session数据；
-- 如果文档存在冲突，按 docs/DEVELOPMENT_SPEC.md 中的优先级处理；
-- 只有会改变产品行为且无法由文档解决的问题才询问用户；其他实现细节自行作出保守、简单、可测试的决定并记录。
+## 开发规则（沿用）
 
-每完成一个Phase：
-1. 运行构建和全部相关测试（devcheck.sh + msvc-check.sh）；
-2. 更新 STATUS.md；
-3. 报告已完成内容、实际测试命令和结果、已知限制、下一Phase；
-4. 保持仓库处于可继续开发的状态。
+- 严格按 `docs/CODING_STANDARDS.md`：命名、命名空间、头文件最小包含、平台隔离、RAII（禁止 detach 线程、禁止跨线程直接操作控件、禁止吞错误）。
+- 不添加 fallback、旧协议兼容、静默降级；不以空实现或放宽测试通过验收。
+- 协议线上格式必须完全符合 `docs/PROTOCOL_SPEC.md`；配置 schema 必须符合 `docs/CONFIG_SPEC.md`。
+- 改动后必跑：`cmake --build --preset dev-mingw`（零警告）+ `ctest --preset dev-mingw`（全绿）+ 行为相关时 `python tools/smoke_e2e.py`。
+- 每完成一块工作更新 `STATUS.md`（它是唯一进度来源）。
+- Git 提交规范见 CODING_STANDARDS §10（phaseN 小步提交；当前工作区有未提交改动，先 `git status` 确认再动手）。**ClaudeCode 等外部 agent 提交须按下方「Git 提交指南」操作，勿直接跳过。**
 
-Git 提交规范（见 CODING_STANDARDS.md §10）：
-- 每个 Phase 拆为小提交（interfaces → happy path → error handling → tests → docs）；
-- 每个提交必须可编译；
-- 提交信息格式：phaseN: <描述>
+## Git 提交指南（快速参考）
 
-现在先检查仓库，然后实施 Phase 0。不要开始 Phase 1，直到Phase 0的完成定义全部满足。
+> `git` 已安装到 `D:\tools\git\cmd\git.exe`，已加入用户 PATH。新开终端直接执行 `git` 即可。
+
+```bash
+cd /d/coding/RemoteTool
+git add -A
+git commit -m "<scope>: <动词> <描述>"
+git push origin <当前分支>
 ```
 
-## 自动连续推进Phase 0～6
-
-```text
-你正在开发 Remote Maintenance Tunnel Tool。先完整阅读 docs 目录中的：
-README.md、DEVELOPMENT_SPEC.md、PROTOCOL_SPEC.md、IMPLEMENTATION_PLAN.md、CONFIG_SPEC.md、TEST_PLAN.md。
-
-在不需要产品决策的情况下，自动依次推进 Phase 0 到 Phase 6。每个Phase必须：
-- 先检查前一Phase完成定义；
-- 实现当前Phase；
-- 运行当前Phase测试和已有回归测试；
-- 修复失败后再次验证；
-- 更新 STATUS.md 并形成清晰检查点；
-- 通过后才进入下一Phase。
-
-不要因为自动推进而跳过测试、合并Phase或降低验收标准。不要实现Phase 7或非目标功能。
-
-以下情况暂停并提出一个具体问题：
-- 规范存在无法按优先级解决的矛盾；
-- 需要用户提供Windows签名证书、实际设备SDK或外部凭据；
-- 继续操作会覆盖用户未提交的冲突改动；
-- 安全库不支持规范要求的密码套件，且替代会改变安全属性；
-- 当前环境无法进行Windows实机验收。此时先完成所有可在当前环境验证的工作，并明确列出待Windows执行的命令与用例。
-
-不要在一般实现细节上等待用户。选择最简单、可测试、符合规范的实现，并在 STATUS.md 记录决定。
+```powershell
+# 如果 git 找不到，用完整路径
+cd D:\coding\RemoteTool
+D:\tools\git\cmd\git.exe add -A
+D:\tools\git\cmd\git.exe commit -m "<scope>: <动词> <描述>"
+D:\tools\git\cmd\git.exe push origin <当前分支>
 ```
 
-## 继续未完成项目
+**提交信息格式**：`<scope>: <动词> <描述>`，例如 `ui: add dark theme`、`fix: correct session half-close`。
 
-```text
-请先读取 STATUS.md、docs/README.md、docs/CODING_STANDARDS.md、docs/ENVIRONMENT.md、全部规范文件、git状态和最近提交。
-确定最后一个真正满足完成定义的Phase，以及当前工作区未完成的改动。
+**scope 参考**：`ui` / `core` / `fix` / `feat` / `docs` / `cmake` / `refactor` / `test`
 
-接手后先验证环境（必须）：
-- bash tools/devcheck.sh — MinGW 开发期验证
-- bash tools/msvc-check.sh — MSVC 生产构建验证
-- 确认 frame_test 49/49 通过后再继续编码
-
-从未完成的最早Phase继续，不要重写已经通过测试的模块，不要假设STATUS.md声明完成就一定完成；用构建和测试验证。
-
-完成当前Phase后运行回归测试并更新STATUS.md。若无产品级阻塞，继续下一Phase，最多推进到Phase 6。
-
-Git 提交规范（见 CODING_STANDARDS.md §10）：
-- 每个 Phase 拆为小提交，每个提交必须可编译；
-- 提交信息格式：phaseN: <描述>
-```
-
-## 代码审查提示词
-
-```text
-请依据 docs/DEVELOPMENT_SPEC.md、docs/PROTOCOL_SPEC.md、docs/IMPLEMENTATION_PLAN.md、docs/CONFIG_SPEC.md 和 docs/TEST_PLAN.md 审查当前实现。
-
-优先寻找：
-1. 协议字节格式和状态机偏差；
-2. Session数据串线、竞态、生命周期和半关闭错误；
-3. 无界队列、缺少背压、队头阻塞；
-4. 认证绕过、明文降级、密钥泄漏和目标白名单绕过；
-5. Socket、Timer、线程、Windows句柄泄漏；
-6. GUI线程直接执行网络或被工作线程直接访问控件；
-7. 测试缺口或通过降低断言掩盖缺陷；
-8. 实现了非目标功能导致复杂度上升。
-
-先输出按严重度排序、带文件和行号的发现；再给最小修复方案。不要只做风格评价，不要在没有明确授权时大规模重构。
-```
-
-## Windows验证提示词
-
-```text
-当前目标是Phase 6 Windows验证。请先读取 docs/TEST_PLAN.md 的Windows人工验收和发布阻断条件。
-
-执行：
-- Windows x64 Debug/Release配置、构建和CTest；
-- RemoteTool与Agent绿色目录打包；
-- 多SSH连接；
-- Web多窗口和多次刷新；
-- 断网恢复与进程重启；
-- 配置持久化和普通用户运行；
-- TLS抓包明文检查；
-- 8小时稳定性测试（如果当前运行时允许持续监控）。
-
-记录真实命令和结果。无法执行的项目必须标记为“未验证”，不能写成通过。最终按 TEST_PLAN.md 模板生成测试报告。
-```
+**硬性要求**：
+- 每个提交必须可编译
+- 提交前跑 `cmake --build --preset dev-mingw`（零警告）+ `ctest --preset dev-mingw`（全绿）
+- 行为相关时跑 `python tools/smoke_e2e.py`

@@ -1,14 +1,14 @@
 # 开发状态报告
 
-版本：1.5
-日期：2026-07-18 (end of day)
+版本：1.7
+日期：2026-07-21
 维护者：RemoteTool 团队
 
 > 本文件是项目进度的唯一真实来源。
 
 ## 当前 Phase
 
-**Phase 6：发布与验证** — 进行中。MSVC 生产构建已验证（frame/messages/config_loader 全过），MinGW 16/16 ctest 全绿。
+**Phase 6：发布与验证** — 进行中。端到端转发已在本机验证通过（python echo + 映射 + Agent 上线，回显 sha256 一致）；绿色发布脚本 `tools/build-release.sh` 已于 2026-07-19 复验通过。2026-07-21 修复隧道数据通路在大数据量/并发下丢数据的 4 个 bug（见下），dist 已重新构建。
 
 ## 整体进度
 
@@ -19,113 +19,81 @@
 | 2 — 单 Session 端口转发 | ✅ |
 | 3 — 多 Session + 控制帧优先 + 背压 | ✅ |
 | 4 — GUI + 配置持久化 + DPAPI | ✅ |
-| 5 — TLS-PSK (mbedTLS) | ✅ (client path) |
-| 6 — MSVC 验证 / 发布 | 🟡 (关键模块验证通过) |
-| **总计** | **~90%** |
+| 5 — TLS-PSK (mbedTLS) | ✅ client path（server-side TLS 未做，当前链路为明文 TCP） |
+| 6 — 发布与验证 | 🟡 端到端冒烟通过；MSVC 构建与长时间稳定性未验证 |
+| **总计** | **~93%** |
 
-## 构建与测试
+## 构建与测试（最近验证：2026-07-21）
 
-- MinGW CMake: 16/16 ctest 全绿 (~800 assertions, zero warnings)
-- MSVC x64 /O2: frame_test(49) + messages_test(135) + config_loader_test(24) 全过
-- mbedTLS 2.28.7 vendored + MinGW 构建通过
-- 两个 Win32 GUI 应用均编译成功
+- 开发构建（MinGW GCC 16.1 + Ninja）：
+  `cmake --preset dev-mingw && cmake --build --preset dev-mingw && ctest --preset dev-mingw`
+  → 编译器警告/错误 **0**（含两个 GUI 应用；已定义 `_WIN32_WINNT=0x0601`），**16/16 ctest 全绿**（multi_session_test 维持 Disabled）
+- 端到端并发验证（2026-07-21，`.workbuddy/repro/` 的 PowerShell/C# 等价环境，本机无 python）：3 映射顺序 64KB/256KB/1MB + 9 连接并发（128~384KB），经隧道回显 **sha256 全部一致，12/12 通过**；dist release 二进制复测同样 12/12
+- 绿色发布：`bash tools/build-release.sh` → `dist/remote_tool.exe`（1.5 MB）+ `dist/agent.exe`（1.5 MB），仅依赖系统 DLL（KERNEL32/USER32/GDI32/WS2_32/UCRT），无 MinGW 运行时依赖
+- 端到端冒烟：`python tools/smoke_e2e.py` → PASS（256 KiB 随机 + 20 KiB 文本，双连接回显 sha256 一致；脚本自行清理进程与临时目录；2026-07-19 验证，本机 python 已不可用）
+- MSVC x64 /O2（历史验证）：frame_test(49) + messages_test(135) + config_loader_test(24) 通过；完整 MSVC CMake 构建（含 mbedTLS/GUI 链接）未复验
 
-## 已知限制
+## 架构要点（交接用）
 
-- 2 集成测试 disabled（async chain hang: agent_session bidirectional + multi_session）
-- mbedTLS MSVC + 完整 GUI MSVC link 待验证
-- server-side TLS 待实现（需 per-device PSK after HELLO）
-- atomic_write 无 fsync
-- 无 30 分钟稳定性测试
+- 核心库 `rmt_core`（`include/rmt/` + `src/`）与 GUI（`apps/`）分层；GUI 线程不触碰 socket，io_context 跑在工作线程
+- RemoteTool 侧帧分发：`DeviceManager::set_on_unhandled_frame → SessionManager::on_session_frame`；本地端口接入：`MappingListener`（Start/Stop 真实启停，`start()` 返回 `ErrorCode`）
+- Agent 侧帧分发：新增 `AgentSessionManager`，接管 `AgentConnection::set_on_frame`，OPEN_SESSION 创建 `AgentSession`（白名单检查/目标连接在其中完成），SESSION_DATA/HALF_CLOSE/CLOSE_SESSION 按 session_id 路由；`AgentConnection::tunnel()` 以 shared_ptr 共享隧道
+- 白名单：agent_windows 按 agent.json `target_policy` 构建 `TargetWhitelist`，空白名单/无效策略 = 全部拒绝（fail closed）
+- GUI 线程同步：RemoteTool 用 `EventQueue`（500ms 定时器排空）+ per-mapping 会话计数经 io 线程查询回投；Agent 用 `PostMessage(WM_USER)` + 互斥队列 + 定时器排空
+- 半关闭状态机：SESSION_DATA 在 `Connected|HalfClosedLocal` 接收；对端 HALF_CLOSE 在 `HalfClosedLocal` 触发双侧关闭；本地读/转发在 `HalfClosedRemote` 保持开放（2026-07-19 修复）
 
-**Phase 4：配置持久化与 SecretStore** — 进行中（DPAPI + ConfigLoader 完成，15/15）
+## 已完成（本轮要点，更早历史见 git log）
 
-### Phase 4 新增
-- `include/rmt/platform/dpapi_secret_store.h` + `src/platform/dpapi_secret_store.cpp` — DPAPI 生产实现（CryptProtectData/CryptUnprotectData, #ifdef _WIN32）
-- `include/rmt/config/config_loader.h` + `src/config/config_loader.cpp` — 配置加载/保存（4 种配置文件，24 测试往返验证）
-- 下一步：Win32 GUI（主窗口 + 设备/映射列表）
+### 2026-07-21 隧道数据通路修复（大数据量/并发丢数据）
+现场反馈"映射建好但连不上/传不完整"，经本机 3 映射 + 9 连接并发复现，修复 4 个 bug：
+- `AgentSession::handle_half_close` 收到 HALF_CLOSE 时清空写队列并立即 FIN → 改为排空后（`maybe_shutdown_target_write`）再向目标发 FIN
+- `SessionManager::do_local_write` 对同一 socket 并发发起多个 `async_write`（asio 未定义行为，数据可交错）→ 改为写队列串行化
+- `SessionManager` 收到对端 HALF_CLOSE 立即 shutdown/close → 改为 `maybe_finish_local_close` 延迟到本地写队列排空，避免截断在途回声数据
+- `TunnelConnection::send_frame` 控制帧优先级使 HALF_CLOSE 越过同会话的 SESSION_DATA（接收方提前拆会话，日志出现 `frame for unknown session`）→ 仅连接级帧（HELLO/HEARTBEAT/配对/PROTOCOL_ERROR）保留优先级，会话级帧一律 FIFO；并修复 `do_write` lambda 按引用捕获栈变量 `[&q]` 的悬垂 bug
+- 验证：16/16 ctest 全绿；顺序 + 并发端到端 sha256 12/12；dist release 重新构建并复测通过
 
-## 已完成
+### 2026-07-19 GUI 审查与加固
+- remote_tool：Mappings Start/Stop 真实启停 `MappingListener`；接通 Session 帧分发；设备离线清理会话；加载 `remote_tool.json` + 新增 Settings 对话框
+- 修复：配对码字体 GDI 泄漏、`enabled` 误写成在线状态、剪贴板泄漏、Agent Reconnect 按钮永久断连（改为重建连接实例）
+- UI：统一 Segoe UI 字体（DPI 感知）、窗口可调整大小 + 自适应布局 + 最小尺寸、状态栏 4 分区、Agent 大号彩色状态 + 事件日志；消除全部编译警告
 
-### Phase 0 — 工程初始化与核心工具
-- `rmt_core` 静态库（13 个源文件）+ 2 个可执行程序
-- 核心工具：error_code、frame 编解码、scope_guard、log、strict_json、atomic_write、config_schema、target_whitelist、secret_store
+### 2026-07-19 Agent 侧 Session 通路接通（端到端可用）
+- 新增 `AgentSessionManager`；`AgentConnection::connection_` 改 shared_ptr + `tunnel()`/`io()` 访问器
+- 修复 SessionManager 半关闭状态机数据丢弃/会话悬挂 bug
+- `MappingListener::start` 返回 `ErrorCode`；`SessionManager::active_sessions_for_mapping()` per-mapping 统计，GUI Conn 列显示真实数字
+- agent_windows 强制执行 `TargetWhitelist`；新增 `tools/smoke_e2e.py` 端到端冒烟
 
-### Phase 1 — 基础 TCP + 帧协议 + 在线状态
-- `include/rmt/protocol/messages.h` + `src/protocol/messages.cpp` — HELLO/HELLO_ACK/HEARTBEAT/HEARTBEAT_ACK JSON 编解码（81 测试，严格字段校验）
-- `include/rmt/tunnel/connection.h` + `src/tunnel/connection.cpp` — TCP socket RAII + FrameDecoder（async read/write 串行化，46 测试含本地 echo server）
-- `include/rmt/tunnel/agent_connection.h` + `src/tunnel/agent_connection.cpp` — Agent 连接状态机（CONNECTING→WAIT_HELLO_ACK→ONLINE，心跳，看门狗，指数退避重连 ±20% 抖动）
-- `include/rmt/tunnel/acceptor.h` + `src/tunnel/acceptor.cpp` — RemoteTool TCP acceptor（async accept 循环）
-- `include/rmt/tunnel/device_manager.h` + `src/tunnel/device_manager.cpp` — 设备管理（HELLO 处理/重复拒绝，HEARTBEAT ACK 回复，超时清理）
+### Phase 0–5 已有成果（摘要）
+- 帧编解码、HELLO/HEARTBEAT、Session 全套消息（严格 JSON 校验）
+- TunnelConnection（写串行化 + 连接级控制帧优先、会话级帧 FIFO）、AgentConnection（状态机/看门狗/指数退避重连）
+- Acceptor、DeviceManager（HELLO/心跳/超时清理）、MappingListener、SessionManager（并发上限/背压高低水位 256/128 KiB/掉线清理）
+- AgentSession（白名单→目标连接→双向转发→半关闭）
+- 配置体系：strict_json + config_schema + atomic_write + config_loader（4 种配置文件，24 项往返测试）
+- DPAPI SecretStore、TargetWhitelist（手写 IP/CIDR 解析，无平台 API 依赖）
+- mbedTLS 2.28.7 vendored（瘦配置，PSK + AES-128-GCM），client path 完成
+- 两个 Win32 GUI 应用（remote_tool / agent_windows）
 
-### 应用程序
-- `apps/remote_tool/main.cpp` — Acceptor + DeviceManager 启动监听 :4433
-- `apps/agent_windows/main.cpp` — AgentConnection 连接 RemoteTool
+## 已知限制与遗留风险
 
-### 集成测试
-- `tests/integration/hello_heartbeat_test.cpp` — 端到端 RemoteTool Acceptor + Agent HELLO 握手 + 心跳 + 断开检测（2.75s）
+1. **配对码仍是 UI 层 stub**：8 位随机码只在 GUI 生成/展示，未与协议侧校验挂钩；设备认证目前仅有 HELLO 中的 device_id（PSK 配对协议未接通）
+2. **Settings 对话框会覆盖手工编辑的 agent.json**：对话框不含 `target_policy` 字段，点 OK 会把外部手改的白名单冲掉（需重启进程重新加载）
+3. `AgentConnection` 心跳的 `active_sessions` 字段仍硬编码 0
+4. 2 个集成测试维持 Disabled：`multi_session_test`（async chain hang）、`agent_session_test::test_bidirectional`（保留为参考，标 `[[maybe_unused]]`）
+5. MSVC 完整构建（mbedTLS + GUI 链接）未复验；30 分钟/8 小时稳定性测试未做
+6. `atomic_write` 无 fsync
+7. server-side TLS 未实现（需 HELLO 后按设备 PSK 升级），当前链路为明文 TCP —— **不要在生产环境使用当前构建**
+8. 每设备 session 数统计未做（Devices 列表无 Sess 列；per-mapping 已有）
+9. `MappingListener` 的 `reuse_address(true)` 在 Windows 上允许两个实例绑定同一映射端口（连接会被随机分发到不同实例）；如需快速重绑定可考虑改用 `SO_EXCLUSIVEADDRUSE` 并加单实例锁
 
-### Phase 2 — 单 Session 端口转发
-- `include/rmt/protocol/messages.h/cpp` 扩展 — Session 消息编解码（OPEN_SESSION/SESSION_OPENED/SESSION_OPEN_FAILED/SESSION_DATA/HALF_CLOSE/CLOSE_SESSION，54 新测试）
-- `include/rmt/session/session_id.h` — SessionId 分配器（单调递增，60s 黑名单防重用）
-- `include/rmt/tunnel/agent_session.h` + `src/tunnel/agent_session.cpp` — Agent 侧 Session 处理器（白名单检查→目标连接→双向转发→半关闭/关闭）
-- `include/rmt/tunnel/mapping_listener.h` + `src/tunnel/mapping_listener.cpp` — RemoteTool 本地端口监听器
-- `include/rmt/tunnel/session_manager.h` + `src/tunnel/session_manager.cpp` — RemoteTool Session 管理器（状态转移、双向转发、统计，33 测试）
-- DeviceManager 扩展：`get_connection()` + `set_on_unhandled_frame()`（Session 帧分发）
+## 下一步（按优先级）
 
-### Phase 3 — 多 Session 与背压
-- TunnelConnection 控制帧优先：`control_queue_` + `data_queue_`，do_write 优先发控制帧（PROTOCOL_SPEC §11）
-- SessionManager 并发上限：`set_max_sessions(32)` + `active_session_count()` + `create_session` 拒绝超限
-- SessionManager Agent 掉线清理：`remove_all_sessions_for_device()`
-- SessionManager 背压：高低水位（256 KiB / 128 KiB），暂停/恢复 local socket 读
-- 多 Session 并发验证：`test_multi_session_independent`（3 Session 独立生命周期）
-
-### 依赖
-- standalone Asio 1.30.2 vendored in `third_party/asio/`
-- 环境：MinGW GCC 16.1.0 / VS2022 MSVC 19.44 + Windows 11 SDK
-
-## 测试
-
-- 命令：`cmake --preset dev-mingw && cmake --build --preset dev-mingw && ctest --preset dev-mingw`
-- 结果：**15/15 通过**
-  - Phase 0（8）、Phase 1（5）、Phase 2（1 session_manager + 1 messages expanded）、Phase 3（1 session_manager expanded）
-  - 总计 ~800 项断言，MinGW `-Wall -Wextra -Wpedantic` 零警告
-
-### 已知限制
-- `agent_session_test` 双向转发异步链 test_bidirectional 注释（Phase 3 大规模集成测试将替代）
-- 大规模并发集成测试未做（32/128 并发 echo + 30 分钟稳定性）
-- 无 TLS（Phase 5）
-- MSVC CMake 需在 cmd.exe 跑
-
-## 下一步
-
-**Phase 3 收尾**：大规模并发集成测试（32 echo + 背压验证）
-**Phase 4**：RemoteTool GUI + 配置持久化（Win32 控件 + 设备/映射管理）
-
-### 集成测试覆盖
-- hello_heartbeat：RemoteTool Acceptor 接受 Agent → HELLO 握手 → 设备上线回调 → 心跳交换 → Agent stop → 设备离线回调
-
-## 已知限制
-
-- `atomic_write` 无 fsync（留 platform 层 Phase 4+）
-- `SecretStore` DPAPI 生产实现未做（留 Phase 4+）
-- Phase 1 无 TLS（TCP 明文，TLS 在 Phase 5 实施）
-- Agent 配置硬编码（未加载 agent.json，留 Phase 2）
-- 重连退避在 Agent 状态机实现，RemoteTool 侧无设备列表持久化
-- MSVC CMake 需在 cmd.exe 跑 `tools/msvc-cmake.bat`
-
-## 下一步
-
-**Phase 2：单 Session 端口转发**
-- RemoteTool 创建固定 MappingListener
-- 接受本地 TCP 连接 → 分配 SessionId → 发送 OPEN_SESSION
-- Agent 检查目标策略并异步连接目标
-- SESSION_OPENED/FAILED 处理
-- 双向转发 SESSION_DATA + 半关闭
-- 统计双向字节数
-- 使用本地 echo server 验证双向转发 + 100 MiB 随机数据哈希一致
+1. Settings 对话框支持编辑 `target_policy`（消除手改 JSON 被覆盖的问题）
+2. PSK 配对协议接通（替换配对码 stub；server-side TLS）
+3. 心跳 `active_sessions` 接真实统计
+4. MSVC 构建复验 + Release 全量回归
+5. 启用/修复 2 个 Disabled 集成测试；大规模并发（32/128 echo）与稳定性测试
+6. 每设备 session 统计列
 
 ## 需要用户决定
 
 - 无当前阻塞项
-- Phase 2 前确认 Session 转发是否需在 Phase 1 集成测试基础上继续（已就绪）

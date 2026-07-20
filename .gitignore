@@ -38,3 +38,12 @@ Desktop.ini
 *.tmp
 *~
 *.log
+
+# Workbuddy release artifacts (not committed)
+build-msvc-cmake/
+build-release/
+dist/
+
+# E2E smoke scratch dir (tools/smoke_e2e.py)
+.smoke-e2e/
+.smoke/

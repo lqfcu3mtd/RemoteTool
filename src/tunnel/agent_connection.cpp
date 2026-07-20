@@ -85,7 +85,7 @@ void AgentConnection::do_connect() {
 
     set_state(AgentState::Connecting);
 
-    connection_ = std::make_unique<TunnelConnection>(io_);
+    connection_ = std::make_shared<TunnelConnection>(io_);
 
     auto weak = std::weak_ptr<AgentConnection>(shared_from_this());
 
