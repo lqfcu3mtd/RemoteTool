@@ -238,7 +238,10 @@ void AgentSession::do_target_write() {
     asio::async_write(*target_socket_, asio::buffer(entry.data),
         [this, self](const asio::error_code& ec, std::size_t /*bytes*/) {
             if (target_write_queue_.empty()) {
+                // Queue was drained by cleanup(); still honor a pending
+                // half-close shutdown if the socket is alive.
                 writing_to_target_ = false;
+                maybe_shutdown_target_write();
                 return;
             }
 
@@ -265,6 +268,9 @@ void AgentSession::do_target_write() {
             }
 
             do_target_write();
+            // A half-close may already be pending: if this was the last
+            // queued write, it is now safe to send FIN to the target.
+            maybe_shutdown_target_write();
         });
 }
 
@@ -356,16 +362,13 @@ void AgentSession::handle_half_close(const rmt::protocol::SessionHalfCloseMessag
     logger_.info("AgentSession session_id=" + std::to_string(session_id_)
                  + " received HALF_CLOSE");
 
-    // Shutdown target write side.
-    if (target_socket_ && target_socket_->is_open() && !target_write_closed_) {
-        target_write_closed_ = true;
-        // Drain any pending write queue.
-        target_write_queue_.clear();
-        writing_to_target_ = false;
-
-        asio::error_code ignored;
-        target_socket_->shutdown(asio::ip::tcp::socket::shutdown_send, ignored);
-    }
+    // Stop accepting new data for the target, but do NOT clear the write
+    // queue or shut down immediately: queued/in-flight writes must drain
+    // first, otherwise client data that preceded the HALF_CLOSE on the
+    // tunnel would be silently dropped. maybe_shutdown_target_write()
+    // sends FIN once the queue is empty and no write is in flight.
+    target_write_closed_ = true;
+    maybe_shutdown_target_write();
 
     if (state_ == SessionState::Connected) {
         state_ = SessionState::HalfClosedLocal;
@@ -374,6 +377,20 @@ void AgentSession::handle_half_close(const rmt::protocol::SessionHalfCloseMessag
         state_ = SessionState::Closed;
         cleanup();
     }
+}
+
+void AgentSession::maybe_shutdown_target_write() {
+    if (!target_write_closed_ || target_write_shutdown_done_) {
+        return;
+    }
+    if (writing_to_target_ || !target_write_queue_.empty()) {
+        return;  // drain first; the write completion handler re-calls us
+    }
+    if (target_socket_ && target_socket_->is_open()) {
+        asio::error_code ignored;
+        target_socket_->shutdown(asio::ip::tcp::socket::shutdown_send, ignored);
+    }
+    target_write_shutdown_done_ = true;
 }
 
 void AgentSession::handle_close(const rmt::protocol::CloseSessionMessage& /*msg*/) {

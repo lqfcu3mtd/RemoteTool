@@ -170,18 +170,14 @@ void SessionManager::on_session_frame(std::uint32_t session_id,
                 logger_.info("SessionManager: session "
                              + std::to_string(session_id)
                              + " half-closed (remote write)");
-                // Shutdown local socket write side.
-                if (s->local_socket) {
-                    asio::error_code ignored;
-                    s->local_socket->shutdown(
-                        asio::ip::tcp::socket::shutdown_send, ignored);
-                }
+                // Defer FIN/close until the local write queue has drained:
+                // SESSION_DATA frames precede this HALF_CLOSE on the tunnel,
+                // and their payload must reach the local client first.
+                s->local_write_shutdown_pending = true;
                 if (both_sides) {
-                    // Local write and remote write are both closed: the
-                    // session is finished.
-                    transition_to_closed(session_id,
-                                         "both sides half-closed");
+                    s->local_close_after_drain = true;
                 }
+                maybe_finish_local_close(session_id);
             }
         } else {
             auto& err = std::get<std::string>(result);
@@ -402,16 +398,79 @@ void SessionManager::do_local_write(std::uint32_t session_id,
         return;
     }
 
-    auto buf = std::make_shared<std::vector<std::uint8_t>>(std::move(data));
+    s->local_write_queue.push_back(
+        std::make_shared<const std::vector<std::uint8_t>>(std::move(data)));
+    if (!s->writing_local) {
+        do_local_write_next(session_id);
+    }
+}
+
+void SessionManager::do_local_write_next(std::uint32_t session_id) {
+    auto* s = find_session(session_id);
+    if (!s) {
+        return;
+    }
+    if (!s->local_socket) {
+        s->local_write_queue.clear();
+        s->writing_local = false;
+        maybe_finish_local_close(session_id);
+        return;
+    }
+    if (s->local_write_queue.empty()) {
+        s->writing_local = false;
+        maybe_finish_local_close(session_id);
+        return;
+    }
+
+    s->writing_local = true;
+    auto buf = s->local_write_queue.front();
     asio::async_write(*s->local_socket, asio::buffer(*buf),
         [this, session_id, buf](const asio::error_code& ec, std::size_t) {
-            if (ec && ec != asio::error::operation_aborted) {
-                logger_.error("SessionManager: session "
-                              + std::to_string(session_id)
-                              + " local write error: " + ec.message());
-                close_session(session_id);
+            auto* s2 = find_session(session_id);
+            if (!s2) return;
+
+            if (!s2->local_write_queue.empty()) {
+                s2->local_write_queue.pop_front();
             }
+
+            if (ec) {
+                if (ec != asio::error::operation_aborted) {
+                    logger_.error("SessionManager: session "
+                                  + std::to_string(session_id)
+                                  + " local write error: " + ec.message());
+                    close_session(session_id);
+                    return;
+                }
+                // Aborted: the socket is being torn down; drop the rest.
+                s2->local_write_queue.clear();
+                s2->writing_local = false;
+                return;
+            }
+
+            do_local_write_next(session_id);
         });
+}
+
+void SessionManager::maybe_finish_local_close(std::uint32_t session_id) {
+    auto* s = find_session(session_id);
+    if (!s || !s->local_write_shutdown_pending) {
+        return;
+    }
+    if (s->writing_local || !s->local_write_queue.empty()) {
+        return;  // still draining; the write completion handler re-calls us
+    }
+
+    s->local_write_shutdown_pending = false;
+    if (s->local_socket) {
+        asio::error_code ignored;
+        s->local_socket->shutdown(asio::ip::tcp::socket::shutdown_send,
+                                  ignored);
+    }
+    if (s->local_close_after_drain) {
+        // Local write and remote write are both closed: the session is
+        // finished (all queued data has been delivered).
+        transition_to_closed(session_id, "both sides half-closed");
+    }
 }
 
 void SessionManager::transition_to_closed(std::uint32_t session_id,

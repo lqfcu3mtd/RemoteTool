@@ -73,4 +73,22 @@ MSVC 生产验证：`bash tools/msvc-check.sh`（无 vcvars，脚本手动设 IN
 - 协议线上格式必须完全符合 `docs/PROTOCOL_SPEC.md`；配置 schema 必须符合 `docs/CONFIG_SPEC.md`。
 - 改动后必跑：`cmake --build --preset dev-mingw`（零警告）+ `ctest --preset dev-mingw`（全绿）+ 行为相关时 `python tools/smoke_e2e.py`。
 - 每完成一块工作更新 `STATUS.md`（它是唯一进度来源）。
-- Git 提交规范见 CODING_STANDARDS §10（phaseN 小步提交；当前工作区有未提交改动，先 `git status` 确认再动手）。
+- Git 提交规范见 CODING_STANDARDS §10（phaseN 小步提交；当前工作区有未提交改动，先 `git status` 确认再动手）。**ClaudeCode 等外部 agent 提交须按下方「Git 提交指南」操作，勿直接跳过。**
+
+## Git 提交指南（快速参考）
+
+```bash
+cd /d/coding/RemoteTool
+git add -A
+git commit -m "<scope>: <动词> <描述>"
+git push origin <当前分支>
+```
+
+**提交信息格式**：`<scope>: <动词> <描述>`，例如 `ui: add dark theme`、`fix: correct session half-close`。
+
+**scope 参考**：`ui` / `core` / `fix` / `feat` / `docs` / `cmake` / `refactor` / `test`
+
+**硬性要求**：
+- 每个提交必须可编译
+- 提交前跑 `cmake --build --preset dev-mingw`（零警告）+ `ctest --preset dev-mingw`（全绿）
+- 行为相关时跑 `python tools/smoke_e2e.py`

@@ -11,6 +11,7 @@
 //   - Accumulate byte statistics
 
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <string>
@@ -103,6 +104,18 @@ private:
         // Track whether we are currently reading from local_socket to avoid
         // overlapping reads.
         bool reading_local = false;
+        // Serialize writes to local_socket: asio requires at most one
+        // outstanding async_write per stream, otherwise payload from
+        // different SESSION_DATA frames may interleave on the wire.
+        std::deque<std::shared_ptr<const std::vector<std::uint8_t>>>
+            local_write_queue;
+        bool writing_local = false;
+        // Deferred local-socket finish: when the agent half-closes (or the
+        // session ends) while remote->local data is still queued, FIN/close
+        // must wait for the queue to drain, otherwise the tail of the
+        // stream is silently dropped.
+        bool local_write_shutdown_pending = false;
+        bool local_close_after_drain = false;
         // Phase 3b: backpressure — pause local read when pending bytes exceed
         // high-water mark (256 KiB), resume below low-water (128 KiB).
         std::uint64_t pending_bytes = 0;
@@ -115,6 +128,10 @@ private:
     void start_local_read(std::uint32_t session_id);
     void do_local_write(std::uint32_t session_id,
                         std::vector<std::uint8_t> data);
+    void do_local_write_next(std::uint32_t session_id);
+    // Perform the deferred FIN (and close, if both sides half-closed) once
+    // the local write queue has fully drained.
+    void maybe_finish_local_close(std::uint32_t session_id);
     void transition_to_closed(std::uint32_t session_id,
                               const std::string& reason);
     void cleanup_session(std::uint32_t session_id);

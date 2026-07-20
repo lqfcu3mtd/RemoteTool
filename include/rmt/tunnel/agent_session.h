@@ -62,6 +62,10 @@ private:
     void cleanup();
     void start_target_read();
     void do_target_write();
+    // Send FIN to the target once the local side half-closed AND all queued
+    // writes have drained. Must not be done eagerly: clearing the queue or
+    // shutting down early would drop client data not yet written.
+    void maybe_shutdown_target_write();
     void send_session_frame(rmt::protocol::Frame frame);
 
     asio::io_context& io_;
@@ -82,6 +86,7 @@ private:
     std::vector<std::uint8_t> target_read_buf_;
     bool target_read_closed_ = false;
     bool target_write_closed_ = false;
+    bool target_write_shutdown_done_ = false;
     std::function<void(std::uint32_t session_id)> on_closed_;
     rmt::common::Logger logger_;
 };
