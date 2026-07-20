@@ -1,14 +1,14 @@
 # 开发状态报告
 
-版本：1.6
-日期：2026-07-19 (end of day)
+版本：1.7
+日期：2026-07-21
 维护者：RemoteTool 团队
 
 > 本文件是项目进度的唯一真实来源。
 
 ## 当前 Phase
 
-**Phase 6：发布与验证** — 进行中。端到端转发已在本机验证通过（python echo + 映射 + Agent 上线，回显 sha256 一致）；绿色发布脚本 `tools/build-release.sh` 已于 2026-07-19 复验通过。
+**Phase 6：发布与验证** — 进行中。端到端转发已在本机验证通过（python echo + 映射 + Agent 上线，回显 sha256 一致）；绿色发布脚本 `tools/build-release.sh` 已于 2026-07-19 复验通过。2026-07-21 修复隧道数据通路在大数据量/并发下丢数据的 4 个 bug（见下），dist 已重新构建。
 
 ## 整体进度
 
@@ -23,13 +23,14 @@
 | 6 — 发布与验证 | 🟡 端到端冒烟通过；MSVC 构建与长时间稳定性未验证 |
 | **总计** | **~93%** |
 
-## 构建与测试（最近验证：2026-07-19）
+## 构建与测试（最近验证：2026-07-21）
 
 - 开发构建（MinGW GCC 16.1 + Ninja）：
   `cmake --preset dev-mingw && cmake --build --preset dev-mingw && ctest --preset dev-mingw`
   → 编译器警告/错误 **0**（含两个 GUI 应用；已定义 `_WIN32_WINNT=0x0601`），**16/16 ctest 全绿**（multi_session_test 维持 Disabled）
+- 端到端并发验证（2026-07-21，`.workbuddy/repro/` 的 PowerShell/C# 等价环境，本机无 python）：3 映射顺序 64KB/256KB/1MB + 9 连接并发（128~384KB），经隧道回显 **sha256 全部一致，12/12 通过**；dist release 二进制复测同样 12/12
 - 绿色发布：`bash tools/build-release.sh` → `dist/remote_tool.exe`（1.5 MB）+ `dist/agent.exe`（1.5 MB），仅依赖系统 DLL（KERNEL32/USER32/GDI32/WS2_32/UCRT），无 MinGW 运行时依赖
-- 端到端冒烟：`python tools/smoke_e2e.py` → PASS（256 KiB 随机 + 20 KiB 文本，双连接回显 sha256 一致；脚本自行清理进程与临时目录）
+- 端到端冒烟：`python tools/smoke_e2e.py` → PASS（256 KiB 随机 + 20 KiB 文本，双连接回显 sha256 一致；脚本自行清理进程与临时目录；2026-07-19 验证，本机 python 已不可用）
 - MSVC x64 /O2（历史验证）：frame_test(49) + messages_test(135) + config_loader_test(24) 通过；完整 MSVC CMake 构建（含 mbedTLS/GUI 链接）未复验
 
 ## 架构要点（交接用）
@@ -42,6 +43,14 @@
 - 半关闭状态机：SESSION_DATA 在 `Connected|HalfClosedLocal` 接收；对端 HALF_CLOSE 在 `HalfClosedLocal` 触发双侧关闭；本地读/转发在 `HalfClosedRemote` 保持开放（2026-07-19 修复）
 
 ## 已完成（本轮要点，更早历史见 git log）
+
+### 2026-07-21 隧道数据通路修复（大数据量/并发丢数据）
+现场反馈"映射建好但连不上/传不完整"，经本机 3 映射 + 9 连接并发复现，修复 4 个 bug：
+- `AgentSession::handle_half_close` 收到 HALF_CLOSE 时清空写队列并立即 FIN → 改为排空后（`maybe_shutdown_target_write`）再向目标发 FIN
+- `SessionManager::do_local_write` 对同一 socket 并发发起多个 `async_write`（asio 未定义行为，数据可交错）→ 改为写队列串行化
+- `SessionManager` 收到对端 HALF_CLOSE 立即 shutdown/close → 改为 `maybe_finish_local_close` 延迟到本地写队列排空，避免截断在途回声数据
+- `TunnelConnection::send_frame` 控制帧优先级使 HALF_CLOSE 越过同会话的 SESSION_DATA（接收方提前拆会话，日志出现 `frame for unknown session`）→ 仅连接级帧（HELLO/HEARTBEAT/配对/PROTOCOL_ERROR）保留优先级，会话级帧一律 FIFO；并修复 `do_write` lambda 按引用捕获栈变量 `[&q]` 的悬垂 bug
+- 验证：16/16 ctest 全绿；顺序 + 并发端到端 sha256 12/12；dist release 重新构建并复测通过
 
 ### 2026-07-19 GUI 审查与加固
 - remote_tool：Mappings Start/Stop 真实启停 `MappingListener`；接通 Session 帧分发；设备离线清理会话；加载 `remote_tool.json` + 新增 Settings 对话框
@@ -56,7 +65,7 @@
 
 ### Phase 0–5 已有成果（摘要）
 - 帧编解码、HELLO/HEARTBEAT、Session 全套消息（严格 JSON 校验）
-- TunnelConnection（写串行化 + 控制帧优先）、AgentConnection（状态机/看门狗/指数退避重连）
+- TunnelConnection（写串行化 + 连接级控制帧优先、会话级帧 FIFO）、AgentConnection（状态机/看门狗/指数退避重连）
 - Acceptor、DeviceManager（HELLO/心跳/超时清理）、MappingListener、SessionManager（并发上限/背压高低水位 256/128 KiB/掉线清理）
 - AgentSession（白名单→目标连接→双向转发→半关闭）
 - 配置体系：strict_json + config_schema + atomic_write + config_loader（4 种配置文件，24 项往返测试）
@@ -74,6 +83,7 @@
 6. `atomic_write` 无 fsync
 7. server-side TLS 未实现（需 HELLO 后按设备 PSK 升级），当前链路为明文 TCP —— **不要在生产环境使用当前构建**
 8. 每设备 session 数统计未做（Devices 列表无 Sess 列；per-mapping 已有）
+9. `MappingListener` 的 `reuse_address(true)` 在 Windows 上允许两个实例绑定同一映射端口（连接会被随机分发到不同实例）；如需快速重绑定可考虑改用 `SO_EXCLUSIVEADDRUSE` 并加单实例锁
 
 ## 下一步（按优先级）
 
