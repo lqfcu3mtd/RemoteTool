@@ -187,6 +187,29 @@ function(cbmk_set_link_flags target)
     endif()
 endfunction()
 
+# For non-Release MinGW builds, the .exe still depends on the GCC runtime
+# DLLs (libgcc_s_seh-1, libstdc++-6, libwinpthread-1). Windows looks for
+# them in the .exe's directory first, so copy them next to the binary as a
+# post-build step. Release uses static linking above, so this is a no-op then.
+if(MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    get_filename_component(_mingw_bin_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    set(_mingw_runtime_dlls
+        "${_mingw_bin_dir}/libgcc_s_seh-1.dll"
+        "${_mingw_bin_dir}/libstdc++-6.dll"
+        "${_mingw_bin_dir}/libwinpthread-1.dll")
+endif()
+
+function(cbmk_copy_mingw_runtime target)
+    if(NOT MINGW OR CMAKE_BUILD_TYPE STREQUAL "Release")
+        return()
+    endif()
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${_mingw_runtime_dlls}
+            $<TARGET_FILE_DIR:${target}>
+        COMMENT "Copying MinGW runtime DLLs next to ${target}.exe")
+endfunction()
+
 # MinGW's endfile spec unconditionally links its default-manifest.o, which
 # collides with our own RT_MANIFEST resource at link time (".rsrc merge
 # failure: multiple non-default manifests"). Shadow it with an empty object
@@ -229,6 +252,7 @@ target_include_directories(remote_tool PRIVATE
 )
 target_link_libraries(remote_tool PRIVATE rmt_core comctl32 dwmapi uxtheme)
 cbmk_set_link_flags(remote_tool)
+cbmk_copy_mingw_runtime(remote_tool)
 cbmk_shadow_default_manifest(remote_tool)
 
 add_executable(agent_windows WIN32
@@ -243,4 +267,5 @@ target_include_directories(agent_windows PRIVATE
 )
 target_link_libraries(agent_windows PRIVATE rmt_core comctl32 dwmapi uxtheme)
 cbmk_set_link_flags(agent_windows)
+cbmk_copy_mingw_runtime(agent_windows)
 cbmk_shadow_default_manifest(agent_windows)

@@ -54,6 +54,22 @@
 
 **解决方案**：用 Git Bash 终端运行脚本；或在 PowerShell 中用 g++ 完整路径直接编译。
 
+### 4.4 MinGW Debug 构建缺运行时 DLL（2026-07-21 踩坑）
+
+**问题**：直接双击 `build-dev/bin/agent_windows.exe` 报「找不到 libgcc_s_seh-1.dll」。
+
+**原因**：
+- `dev-mingw` preset 默认 `CMAKE_BUILD_TYPE=Debug`
+- Debug 走动态链接，依赖 `libgcc_s_seh-1.dll` / `libstdc++-6.dll` / `libwinpthread-1.dll`
+- 这三个 DLL 不在 PATH 也不在 exe 旁 → 加载失败
+- `cbmk_set_link_flags` 只在 **Release** 时用 `-static -static-libgcc -static-libstdc++`，Debug 不沾
+
+**解决方案**：`CMakeLists.txt` 里有 `cbmk_copy_mingw_runtime(target)` 函数，构建后自动把 DLL 拷到 exe 旁边（仅 Debug）。Release 走静态链接，函数是 no-op，dist/ 仍然是干净的 2 个 exe。
+
+**注意**：
+- 如果手动从 IDE 启动 Debug 编译，可能漏掉 post-build step（视 IDE 配置），从命令行 `cmake --build` 没问题
+- `dist/` 下的 exe 是 Release 静态链接的，不需要任何 DLL
+
 ## 5. 新机器环境搭建
 
 详见 [docs/INSTALL.md](INSTALL.md)。核心步骤：
