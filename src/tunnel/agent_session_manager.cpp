@@ -5,15 +5,8 @@
 
 #include "rmt/common/log.h"
 #include "rmt/protocol/messages.h"
-#include "rmt/security/target_whitelist.h"
 
 namespace rmt::tunnel {
-
-AgentSessionManager::AgentSessionManager(
-    const rmt::security::TargetWhitelist& whitelist)
-    : whitelist_(whitelist) {
-    logger_.set_level(rmt::common::LogLevel::Info);
-}
 
 void AgentSessionManager::attach(const std::shared_ptr<AgentConnection>& agent) {
     agent_ = agent;
@@ -91,7 +84,7 @@ void AgentSessionManager::handle_open_session(const protocol::Frame& frame) {
         return;
     }
 
-    auto session = std::make_shared<AgentSession>(agent->io(), tunnel, whitelist_);
+    auto session = std::make_shared<AgentSession>(agent->io(), tunnel);
     sessions_.emplace(sid, session);
     emit("session " + std::to_string(sid) + " open -> " + msg.target_host +
          ":" + std::to_string(msg.target_port));

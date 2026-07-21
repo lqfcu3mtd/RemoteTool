@@ -38,7 +38,6 @@
 #include "rmt/tunnel/agent_connection.h"
 #include "rmt/tunnel/agent_session_manager.h"
 #include "rmt/config/config_loader.h"
-#include "rmt/security/target_whitelist.h"
 
 namespace rmt::gui {
 
@@ -70,9 +69,6 @@ private:
     static void paint_tramp(HDC hdc, RECT client, void* ctx);
     LRESULT handle_ctl_color_static(HDC hdc, HWND control);
 
-    // Build the target whitelist from cfg_.target_policy. On invalid policy
-    // the user gets a warning and a deny-all whitelist is used (fail closed).
-    void rebuild_whitelist();
     // (Re)create io_context + AgentConnection from cfg_ and start it.
     // Tears down any previous instance first.
     void restart_agent();
@@ -115,9 +111,7 @@ private:
     std::shared_ptr<tunnel::AgentConnection> agent_;
     std::thread io_thread_;
 
-    // Target whitelist (owned here; AgentSessionManager holds a reference)
-    // and the session dispatcher for OPEN_SESSION / SESSION_DATA / ...
-    std::unique_ptr<rmt::security::TargetWhitelist> whitelist_;
+    // Session dispatcher for OPEN_SESSION / SESSION_DATA / ...
     std::unique_ptr<tunnel::AgentSessionManager> session_mgr_;
 
     tunnel::AgentState state_ = tunnel::AgentState::Disconnected;

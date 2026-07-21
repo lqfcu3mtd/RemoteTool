@@ -16,9 +16,8 @@
 namespace rmt::tunnel {
 
 AgentSession::AgentSession(asio::io_context& io,
-                           std::shared_ptr<TunnelConnection> tunnel,
-                           const rmt::security::TargetWhitelist& whitelist)
-    : io_(io), tunnel_(std::move(tunnel)), whitelist_(whitelist) {
+                           std::shared_ptr<TunnelConnection> tunnel)
+    : io_(io), tunnel_(std::move(tunnel)) {
     logger_.set_level(rmt::common::LogLevel::Info);
 }
 
@@ -40,25 +39,6 @@ void AgentSession::on_open_session(const rmt::protocol::OpenSessionMessage& msg,
 
     logger_.info("AgentSession session_id=" + std::to_string(session_id)
                  + " OPEN " + msg.target_host + ":" + std::to_string(msg.target_port));
-
-    // Check target whitelist.
-    auto result = whitelist_.check(msg.target_host,
-                                   static_cast<std::uint16_t>(msg.target_port));
-    if (!result.allowed) {
-        logger_.warn("AgentSession whitelist rejected: " + result.reason);
-        emit("session " + std::to_string(session_id)
-             + " rejected (TARGET_NOT_ALLOWED): " + result.reason);
-
-        rmt::protocol::SessionOpenFailedMessage fail;
-        fail.error_code = "TARGET_NOT_ALLOWED";
-        fail.message = result.reason;
-
-        auto frame = rmt::protocol::encode_session_open_failed(fail);
-        send_session_frame(std::move(frame));
-
-        cleanup();
-        return;
-    }
 
     // Create target socket and connect asynchronously.
     state_ = SessionState::Connecting;

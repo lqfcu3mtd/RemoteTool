@@ -14,7 +14,6 @@
 #include "rmt/common/log.h"
 #include "rmt/protocol/frame.h"
 #include "rmt/protocol/messages.h"
-#include "rmt/security/target_whitelist.h"
 #include "rmt/tunnel/connection.h"
 
 namespace rmt::tunnel {
@@ -31,8 +30,7 @@ enum class SessionState {
 class AgentSession : public std::enable_shared_from_this<AgentSession> {
 public:
     AgentSession(asio::io_context& io,
-                 std::shared_ptr<TunnelConnection> tunnel,
-                 const rmt::security::TargetWhitelist& whitelist);
+                 std::shared_ptr<TunnelConnection> tunnel);
     ~AgentSession();
 
     AgentSession(const AgentSession&) = delete;
@@ -76,7 +74,6 @@ private:
 
     asio::io_context& io_;
     std::shared_ptr<TunnelConnection> tunnel_;
-    const rmt::security::TargetWhitelist& whitelist_;
     std::shared_ptr<asio::ip::tcp::socket> target_socket_;
     SessionState state_ = SessionState::Idle;
     rmt::protocol::SessionId session_id_ = 0;

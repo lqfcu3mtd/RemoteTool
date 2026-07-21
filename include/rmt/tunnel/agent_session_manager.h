@@ -5,8 +5,8 @@
 // → SessionManager): the manager takes over AgentConnection::set_on_frame and
 // routes session-scoped frames to per-session AgentSession handlers:
 //
-//   OPEN_SESSION      → decode, create AgentSession (whitelist check and
-//                       target connect happen inside AgentSession)
+//   OPEN_SESSION      → decode, create AgentSession (target
+//                       connect happens inside AgentSession)
 //   SESSION_DATA / SESSION_HALF_CLOSE / CLOSE_SESSION
 //                     → forward to the matching AgentSession by session_id
 //
@@ -28,14 +28,11 @@
 #include "rmt/tunnel/agent_connection.h"
 #include "rmt/tunnel/agent_session.h"
 
-namespace rmt::security { class TargetWhitelist; }
-
 namespace rmt::tunnel {
 
 class AgentSessionManager {
 public:
-    // `whitelist` must outlive the manager (the app owns it).
-    explicit AgentSessionManager(const rmt::security::TargetWhitelist& whitelist);
+    AgentSessionManager() = default;
 
     AgentSessionManager(const AgentSessionManager&) = delete;
     AgentSessionManager& operator=(const AgentSessionManager&) = delete;
@@ -59,7 +56,6 @@ private:
     void handle_open_session(const protocol::Frame& frame);
     void emit(std::string text);
 
-    const rmt::security::TargetWhitelist& whitelist_;
     std::weak_ptr<AgentConnection> agent_;
     std::unordered_map<std::uint32_t, std::shared_ptr<AgentSession>> sessions_;
     std::function<void(std::string)> on_event_;

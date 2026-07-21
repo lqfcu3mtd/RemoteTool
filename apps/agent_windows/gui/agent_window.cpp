@@ -146,7 +146,6 @@ int AgentWindow::run() {
         // Save the stub so the user can edit it from the GUI.
         save_config();
     }
-    rebuild_whitelist();
 
     theme::init();
 
@@ -461,31 +460,6 @@ void AgentWindow::on_size() {
     layout_controls(rc.right - rc.left, rc.bottom - rc.top);
 }
 
-void AgentWindow::rebuild_whitelist() {
-    rmt::security::TargetPolicy policy;
-    policy.allowed_cidrs = cfg_.allowed_cidrs;
-    policy.allowed_ports = cfg_.allowed_ports;
-    policy.allow_ipv6 = cfg_.allow_ipv6;
-    policy.self_listener_port = 0;  // the Agent has no local listener
-    auto result = rmt::security::TargetWhitelist::create(std::move(policy));
-    if (auto* err = std::get_if<std::string>(&result)) {
-        MessageBox(hwnd_,
-            (L"Invalid target_policy in agent.json: " + widen(*err) +
-             L"\n\nAll session targets will be denied until this is fixed.").c_str(),
-            L"Target policy", MB_OK | MB_ICONWARNING);
-        rmt::security::TargetPolicy deny_all;  // empty = deny-all
-        whitelist_ = std::make_unique<rmt::security::TargetWhitelist>(
-            std::get<rmt::security::TargetWhitelist>(
-                rmt::security::TargetWhitelist::create(std::move(deny_all))));
-        return;
-    }
-    whitelist_ = std::make_unique<rmt::security::TargetWhitelist>(
-        std::get<rmt::security::TargetWhitelist>(std::move(result)));
-    if (cfg_.allowed_cidrs.empty() || cfg_.allowed_ports.empty()) {
-        append_log(L"target_policy is empty: all session targets will be denied");
-    }
-}
-
 void AgentWindow::restart_agent() {
     // Tear down the previous instance. AgentConnection::stop() is terminal
     // (stopping_ is latched), so reconnecting requires a fresh object.
@@ -512,8 +486,8 @@ void AgentWindow::restart_agent() {
     });
 
     // Session dispatch: OPEN_SESSION / SESSION_DATA / ... are routed to
-    // per-session AgentSession handlers (whitelist enforced inside).
-    session_mgr_ = std::make_unique<tunnel::AgentSessionManager>(*whitelist_);
+    // per-session AgentSession handlers.
+    session_mgr_ = std::make_unique<tunnel::AgentSessionManager>();
     session_mgr_->attach(agent_);
     session_mgr_->set_on_event([this](std::string text) {
         std::lock_guard<std::mutex> lk(events_m_);
@@ -568,7 +542,6 @@ void AgentWindow::on_settings() {
     cfg_ = copy;
     save_config();
     update_labels();
-    rebuild_whitelist();
     append_log(L"Settings saved; reconnecting");
     restart_agent();
 }
