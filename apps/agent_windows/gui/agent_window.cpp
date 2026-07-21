@@ -17,7 +17,7 @@ constexpr int kWindowH = 460;
 constexpr int kMinW    = 440;
 constexpr int kMinH    = 400;
 
-constexpr wchar_t kAppTitle[] = L"RemoteTool Agent v0.1.0";
+constexpr wchar_t kAppTitle[] = L"RemoteTool Agent v0.1.1";
 
 // UTF-8 → UTF-16 (config values come from JSON, i.e. UTF-8).
 std::wstring widen(const std::string& s) {
@@ -476,7 +476,7 @@ void AgentWindow::restart_agent() {
     ac.server_host = cfg_.server_host;
     ac.server_port = static_cast<std::uint16_t>(cfg_.server_port);
     ac.device_id = cfg_.device_id;
-    ac.agent_version = "0.1.0";
+    ac.agent_version = "0.1.1";
     ac.platform = "windows-x86_64";
 
     agent_ = std::make_shared<tunnel::AgentConnection>(*io_, ac);
@@ -553,7 +553,7 @@ void AgentWindow::on_reconnect() {
 }
 
 void AgentWindow::on_about() {
-    std::wstring text = L"RemoteTool Agent v0.1.0\n\n"
+    std::wstring text = L"RemoteTool Agent v0.1.1\n\n"
         L"Reverse tunnel client.\n\n"
         L"Config: agent.json (in the same directory as the .exe).";
     MSGBOXPARAMS mp = {};

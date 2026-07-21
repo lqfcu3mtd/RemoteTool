@@ -65,7 +65,7 @@ namespace {
     constexpr int kSessH     = 116;
     constexpr int kBtnRowH   = 36;
 
-    constexpr wchar_t kAppTitle[] = L"RemoteTool v0.1.0 — Reverse Tunnel Server";
+    constexpr wchar_t kAppTitle[] = L"RemoteTool v0.1.1 — Reverse Tunnel Server";
 
     // 8-digit random pair code (Phase 4 stub; Phase 5+ wires the real
     // PSK/pairing flow).
@@ -254,7 +254,7 @@ LRESULT MainWindow::handle_message(UINT msg, WPARAM wp, LPARAM lp) {
                 case IDM_HELP_ABOUT: {
                     HICON h = LoadIcon(GetModuleHandle(nullptr),
                                        MAKEINTRESOURCE(IDI_APPICON));
-                    std::wstring about = L"RemoteTool v0.1.0\n\n"
+                    std::wstring about = L"RemoteTool v0.1.1\n\n"
                         L"Lightweight reverse tunnel for remote maintenance.\n\n"
                         L"Server GUI: device pairing, port mappings and live\n"
                         L"session monitoring. TLS-PSK client path complete;\n"

@@ -30,6 +30,6 @@ BEGIN
     ICON         IDI_APPICON,    -1,  16, 16, 32, 32, SS_ICON
     LTEXT        "RemoteTool Agent", -1, 60, 18, 200, 18, SS_LEFT
     LTEXT        "Reverse tunnel client", -1, 60, 36, 240, 30
-    LTEXT        "Version 0.1.0", -1, 60, 70, 200, 14
+    LTEXT        "Version 0.1.1", -1, 60, 70, 200, 14
     DEFPUSHBUTTON "OK",           IDOK, 230, 100, 70, 24, WS_TABSTOP
 END
