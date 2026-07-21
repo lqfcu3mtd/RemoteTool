@@ -9,7 +9,7 @@ RemoteTool 是一个反向 TCP 隧道工具。Agent 主动连接 RemoteTool，Re
 ## 文件清单
 
 ```
-build-dev/bin/
+build/bin/
   remote_tool.exe   — 服务端（GUI 窗口）
   agent_windows.exe — 客户端（GUI 窗口）
 ```
@@ -24,10 +24,10 @@ build-dev/bin/
 
 ```bash
 # 服务端
-./build-dev/bin/remote_tool.exe
+./build/bin/remote_tool.exe
 
 # 客户端（可本机测试）
-./build-dev/bin/agent_windows.exe
+./build/bin/agent_windows.exe
 ```
 
 ## 操作步骤（本机测试）
@@ -112,7 +112,7 @@ python tools/smoke_e2e.py
 
 - **TLS 未启用**：当前链路为明文 TCP（server-side TLS 待做），仅限受信任局域网；Agent 侧目标白名单已强制执行（空白名单全拒）
 - 两个程序均为 Win32 GUI，Windows 7+ 即可运行
-- `dist/` 下的 Release 版已静态链接运行时；`build-dev/bin/` 下的 Debug 版需 MinGW 运行时（把 `D:\tools\mingw64\bin` 加入 PATH）
+- `dist/` 下的 Release 版已静态链接运行时（无 DLL 依赖）；`build/bin/` 下的 Debug 版构建后会自动拷贝 MinGW 运行时 DLL 到 exe 旁边
 - 防火墙可能需要允许 4433 端口入站
 
 ## 构建方法
@@ -120,7 +120,7 @@ python tools/smoke_e2e.py
 ```bash
 # 开发构建（MinGW）
 cmake --preset dev-mingw
-cmake --build build-dev
+cmake --build --preset dev-mingw
 
 # 生产构建（MSVC，需在 cmd.exe 下先运行 vcvars64.bat）
 cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release -B build-msvc

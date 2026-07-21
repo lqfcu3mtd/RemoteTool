@@ -56,7 +56,7 @@
 
 ### 4.4 MinGW Debug 构建缺运行时 DLL（2026-07-21 踩坑）
 
-**问题**：直接双击 `build-dev/bin/agent_windows.exe` 报「找不到 libgcc_s_seh-1.dll」。
+**问题**：直接双击 `build/bin/agent_windows.exe` 报「找不到 libgcc_s_seh-1.dll」。
 
 **原因**：
 - `dev-mingw` preset 默认 `CMAKE_BUILD_TYPE=Debug`

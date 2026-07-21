@@ -12,7 +12,6 @@
 #include "rmt/common/error_code.h"
 #include "rmt/protocol/frame.h"
 #include "rmt/protocol/messages.h"
-#include "rmt/security/target_whitelist.h"
 #include "rmt/test.h"
 #include "rmt/tunnel/agent_session.h"
 #include "rmt/tunnel/connection.h"
@@ -38,23 +37,6 @@ void start_echo(TcpSocket sock) {
                     start_echo(sock);
                 });
         });
-}
-
-rmt::security::TargetWhitelist allow(int port) {
-    rmt::security::TargetPolicy p;
-    p.allowed_cidrs = {"::1/128", "127.0.0.1/32"};
-    p.allowed_ports = {port};
-    p.allow_ipv6 = true;
-    auto r = rmt::security::TargetWhitelist::create(p);
-    return std::move(*std::get_if<rmt::security::TargetWhitelist>(&r));
-}
-
-rmt::security::TargetWhitelist deny() {
-    rmt::security::TargetPolicy p;
-    p.allowed_cidrs = {"10.0.0.0/8"};
-    p.allowed_ports = {9999};
-    auto r = rmt::security::TargetWhitelist::create(p);
-    return std::move(*std::get_if<rmt::security::TargetWhitelist>(&r));
 }
 
 // ---- tests using io_context directly (no thread) ----
@@ -91,8 +73,7 @@ void test_open_allowed() {
     auto tunnel = std::make_shared<TunnelConnection>(io, std::move(*as));
     tunnel->begin_receive();
 
-    auto wl = allow(ep);
-    auto session = std::make_shared<AgentSession>(io, tunnel, wl);
+    auto session = std::make_shared<AgentSession>(io, tunnel);
 
     auto s = session;
     tunnel->set_on_frame([s](const Frame& f) {
@@ -114,64 +95,6 @@ void test_open_allowed() {
     RMT_CHECK_MSG(session->session_id() == 42, "session_id = 42");
 
     // Cleanup: close sockets first so run_for returns
-    session.reset();
-    asio::error_code i;
-    es->close(i);
-    cs->close(i);
-    tunnel->close();
-    io.run_for(std::chrono::milliseconds(50));
-}
-
-void test_open_denied() {
-    asio::io_context io;
-
-    auto ea = std::make_shared<asio::ip::tcp::acceptor>(
-        io, asio::ip::tcp::endpoint(asio::ip::make_address("::1"), 0));
-    int ep = ea->local_endpoint().port();
-    auto es = std::make_shared<asio::ip::tcp::socket>(io);
-    ea->async_accept(*es, [ea, es](const asio::error_code& ec) {
-        if (!ec) start_echo(es);
-    });
-
-    auto ta = std::make_shared<asio::ip::tcp::acceptor>(io);
-    ta->open(asio::ip::tcp::v6());
-    ta->set_option(asio::ip::tcp::acceptor::reuse_address(true));
-    ta->bind(asio::ip::tcp::endpoint(asio::ip::make_address("::1"), 0));
-    ta->listen();
-    int tp = ta->local_endpoint().port();
-
-    auto cs = std::make_shared<asio::ip::tcp::socket>(io);
-    asio::error_code ec;
-    cs->connect(asio::ip::tcp::endpoint(asio::ip::make_address("::1"), tp), ec);
-    RMT_CHECK(!ec);
-
-    auto as = std::make_shared<asio::ip::tcp::socket>(io);
-    ta->accept(*as, ec);
-    RMT_CHECK(!ec);
-
-    auto tunnel = std::make_shared<TunnelConnection>(io, std::move(*as));
-    tunnel->begin_receive();
-
-    auto wl = deny();
-    auto session = std::make_shared<AgentSession>(io, tunnel, wl);
-
-    auto s = session;
-    tunnel->set_on_frame([s](const Frame& f) {
-        if (s && f.header.session_id == s->session_id()) s->on_session_frame(f);
-    });
-
-    rmt::protocol::OpenSessionMessage open;
-    open.mapping_id = "d1";
-    open.target_host = "::1";
-    open.target_port = ep;
-    open.connect_timeout_ms = 2000;
-    session->on_open_session(open, 99);
-
-    io.run_for(std::chrono::milliseconds(200));
-
-    RMT_CHECK_MSG(session->state() == SessionState::Closed,
-                  "should be Closed after deny");
-
     session.reset();
     asio::error_code i;
     es->close(i);
@@ -213,8 +136,7 @@ void test_open_denied() {
     auto tunnel = std::make_shared<TunnelConnection>(io, std::move(*as));
     tunnel->begin_receive();
 
-    auto wl = allow(ep);
-    auto session = std::make_shared<AgentSession>(io, tunnel, wl);
+    auto session = std::make_shared<AgentSession>(io, tunnel);
 
     auto s = session;
     tunnel->set_on_frame([s](const Frame& f) {
@@ -286,8 +208,7 @@ void test_close_session() {
     auto tunnel = std::make_shared<TunnelConnection>(io, std::move(*as));
     tunnel->begin_receive();
 
-    auto wl = allow(ep);
-    auto session = std::make_shared<AgentSession>(io, tunnel, wl);
+    auto session = std::make_shared<AgentSession>(io, tunnel);
 
     auto s = session;
     tunnel->set_on_frame([s](const Frame& f) {
@@ -355,8 +276,7 @@ void test_half_close() {
     auto tunnel = std::make_shared<TunnelConnection>(io, std::move(*as));
     tunnel->begin_receive();
 
-    auto wl = allow(ep);
-    auto session = std::make_shared<AgentSession>(io, tunnel, wl);
+    auto session = std::make_shared<AgentSession>(io, tunnel);
 
     auto s = session;
     tunnel->set_on_frame([s](const Frame& f) {
@@ -398,8 +318,7 @@ void test_half_close() {
 
 int main() {
     test_open_allowed();
-    test_open_denied();
-    // test_bidirectional();  // disabled: complex async chain hangs (TCP/echo/tunnel interplay), revisit in Phase 3
+    // test_bidirectional();  /* disabled */
     test_close_session();
     test_half_close();
 

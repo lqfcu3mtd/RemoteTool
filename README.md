@@ -28,7 +28,7 @@ bash tools/build-release.sh   # 2026-07-19 已验证：MinGW Release 构建 + st
 ```bash
 cmake --preset dev-mingw && cmake --build --preset dev-mingw && ctest --preset dev-mingw
 # 16/16 通过，零编译警告（需把 D:\tools\mingw64\bin 加入 PATH）
-# 输出目录：build-dev/bin/  （remote_tool.exe, agent_windows.exe, 测试 exe 等）
+# 输出目录：build/bin/  （remote_tool.exe, agent_windows.exe, 测试 exe 等）
 
 python tools/smoke_e2e.py     # 端到端冒烟：echo 回显 sha256 校验，自动清理
 ```

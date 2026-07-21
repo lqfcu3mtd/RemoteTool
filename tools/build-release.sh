@@ -34,9 +34,9 @@ g++ --version | head -1
 cmake --version | head -1
 
 # --- configure & build ----------------------------------------------------
-# Build cache: build-release/ (delete-able, regeneratable)
+# Build cache: build/ (cleaned before each run; Regeneratable)
 # Final distribution: dist/ — absolute Windows path printed at the end
-BUILD_DIR="build-release"
+BUILD_DIR="build"
 DIST_DIR="dist"
 rm -rf "$BUILD_DIR" "$DIST_DIR"
 
