@@ -52,6 +52,11 @@ public:
 
     void set_on_closed(std::function<void(std::uint32_t session_id)> cb);
 
+    // Optional human-readable event hook (GUI event log). Emitted for
+    // whitelist rejections, target connect failures, connect success and
+    // target I/O errors — the failures are otherwise only on stderr.
+    void set_on_event(std::function<void(std::string)> cb);
+
 private:
     void on_target_connected(const std::string& connected_host,
                              int connected_port);
@@ -67,6 +72,7 @@ private:
     // shutting down early would drop client data not yet written.
     void maybe_shutdown_target_write();
     void send_session_frame(rmt::protocol::Frame frame);
+    void emit(std::string text);
 
     asio::io_context& io_;
     std::shared_ptr<TunnelConnection> tunnel_;
@@ -88,6 +94,7 @@ private:
     bool target_write_closed_ = false;
     bool target_write_shutdown_done_ = false;
     std::function<void(std::uint32_t session_id)> on_closed_;
+    std::function<void(std::string)> on_event_;
     rmt::common::Logger logger_;
 };
 

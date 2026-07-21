@@ -46,6 +46,8 @@ void AgentSession::on_open_session(const rmt::protocol::OpenSessionMessage& msg,
                                    static_cast<std::uint16_t>(msg.target_port));
     if (!result.allowed) {
         logger_.warn("AgentSession whitelist rejected: " + result.reason);
+        emit("session " + std::to_string(session_id)
+             + " rejected (TARGET_NOT_ALLOWED): " + result.reason);
 
         rmt::protocol::SessionOpenFailedMessage fail;
         fail.error_code = "TARGET_NOT_ALLOWED";
@@ -67,6 +69,8 @@ void AgentSession::on_open_session(const rmt::protocol::OpenSessionMessage& msg,
     auto addr = asio::ip::make_address(msg.target_host, addr_ec);
     if (addr_ec) {
         logger_.error("AgentSession invalid target address: " + msg.target_host);
+        emit("session " + std::to_string(session_id)
+             + " failed: invalid target address " + msg.target_host);
 
         rmt::protocol::SessionOpenFailedMessage fail;
         fail.error_code = "TARGET_CONNECTION_REFUSED";
@@ -98,6 +102,9 @@ void AgentSession::on_open_session(const rmt::protocol::OpenSessionMessage& msg,
 
         logger_.error("AgentSession connect timeout to " + target_host_
                       + ":" + std::to_string(target_port_));
+        emit("session " + std::to_string(session_id_)
+             + " failed: connect timeout to " + target_host_
+             + ":" + std::to_string(target_port_));
 
         asio::error_code ignored;
         target_socket->cancel(ignored);
@@ -127,6 +134,8 @@ void AgentSession::on_open_session(const rmt::protocol::OpenSessionMessage& msg,
 
             if (ec) {
                 logger_.error("AgentSession target connect failed: " + ec.message());
+                emit("session " + std::to_string(session_id_)
+                     + " failed: target connect: " + ec.message());
 
                 rmt::protocol::SessionOpenFailedMessage fail;
                 fail.error_code = "TARGET_CONNECTION_REFUSED";
@@ -207,6 +216,9 @@ void AgentSession::on_target_connected(
 
     logger_.info("AgentSession session_id=" + std::to_string(session_id_)
                  + " connected to " + connected_host + ":" + std::to_string(connected_port));
+    emit("session " + std::to_string(session_id_)
+         + " connected to " + connected_host + ":"
+         + std::to_string(connected_port));
 
     // Start reading from target.
     start_target_read();
@@ -442,6 +454,16 @@ void AgentSession::send_session_frame(rmt::protocol::Frame frame) {
             // Errors logged by TunnelConnection.
         });
     }
+}
+
+void AgentSession::emit(std::string text) {
+    if (on_event_) {
+        on_event_(std::move(text));
+    }
+}
+
+void AgentSession::set_on_event(std::function<void(std::string)> cb) {
+    on_event_ = std::move(cb);
 }
 
 SessionState AgentSession::state() const noexcept {

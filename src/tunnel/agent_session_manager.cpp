@@ -96,6 +96,10 @@ void AgentSessionManager::handle_open_session(const protocol::Frame& frame) {
     emit("session " + std::to_string(sid) + " open -> " + msg.target_host +
          ":" + std::to_string(msg.target_port));
 
+    session->set_on_event([this](std::string text) {
+        emit(std::move(text));
+    });
+
     session->set_on_closed([this, sid](std::uint32_t) {
         emit("session " + std::to_string(sid) + " closed");
         // Defer the erase: this callback fires from inside the session's own
